@@ -21,6 +21,8 @@
 
   let slideN = DECK[0].n;
   let line = 0;
+  let block = 0;            // canonical: which speaking beat within the slide
+  let lastHeard = '';
   let rev = 0;
   let lastRev = -1;
   let lastAppliedT = -1;
@@ -59,6 +61,11 @@
     const i = deckIndex(n);
     return i < DECK.length - 1 ? DECK[i + 1] : null;
   }
+  // Each item (a speaker turn, or an action/note/cut) is one clicker beat.
+  function beatCount(n) {
+    const k = itemsFor(n).length;
+    return k > 0 ? k : 1;
+  }
   function firstSay(s) {
     if (!s) return '';
     for (const it of itemsFor(s.n)) {
@@ -69,18 +76,18 @@
   function rowsFor(n) {
     const rows = [];
     let lastWho = null;
-    for (const it of itemsFor(n)) {
+    itemsFor(n).forEach((it, blk) => {
       if (it.t === 'say') {
         const showWho = it.who !== lastWho;
         lastWho = it.who;
         (it.lines || []).forEach((text, li) => {
-          rows.push({ kind: 'say', who: it.who, text, showWho: showWho && li === 0 });
+          rows.push({ kind: 'say', who: it.who, text, showWho: showWho && li === 0, block: blk });
         });
       } else {
         lastWho = null;
-        rows.push({ kind: it.t, text: it.text || '' });
+        rows.push({ kind: it.t, text: it.text || '', block: blk });
       }
-    }
+    });
     return rows;
   }
   function speakerName(who) {
@@ -99,7 +106,7 @@
   function persist() {
     try {
       sessionStorage.setItem(STORE, JSON.stringify({
-        slide: slideN, line: line, rev: rev, clockStart: clockStart, wordPos: wordPos
+        slide: slideN, block: block, line: line, rev: rev, clockStart: clockStart, wordPos: wordPos
       }));
     } catch (e) { /* private mode */ }
   }
@@ -108,6 +115,7 @@
       const s = JSON.parse(sessionStorage.getItem(STORE) || 'null');
       if (!s || typeof s.slide !== 'number') return;
       if (DECK.some(d => d.n === s.slide)) slideN = s.slide;
+      if (typeof s.block === 'number') block = Math.max(0, Math.min(beatCount(slideN) - 1, s.block | 0));
       const rows = rowsFor(slideN);
       line = Math.max(0, Math.min(rows.length ? rows.length - 1 : 0, s.line | 0));
       if (typeof s.rev === 'number') {
@@ -126,7 +134,7 @@
   function broadcastState(opts) {
     rev += 1;
     persist();
-    post({ type: 'state', slide: slideN, line: line, rev: rev, t: Date.now(), force: !!(opts && opts.force) });
+    post({ type: 'state', slide: slideN, block: block, line: line, rev: rev, t: Date.now(), force: !!(opts && opts.force) });
   }
 
   function applyState(msg) {
@@ -140,39 +148,55 @@
     if (t) lastAppliedT = Math.max(lastAppliedT, t);
     if (typeof msg.rev === 'number') lastRev = msg.rev;
     const n = DECK.some(s => s.n === msg.slide) ? msg.slide : DECK[0].n;
-    const rows = rowsFor(n);
-    const ln = Math.max(0, Math.min(rows.length ? rows.length - 1 : 0, msg.line | 0));
+    const bl = typeof msg.block === 'number' ? Math.max(0, Math.min(beatCount(n) - 1, msg.block | 0)) : 0;
     const changedSlide = n !== slideN;
     slideN = n;
-    line = ln;
+    block = bl;
     persist();
+    // Audience only ever cares about the slide; the beat is presenter-only.
     if (isAudience) renderAudience();
-    else if (changedSlide) renderPresent({ keepLine: true });
-    else highlightLine();
+    else if (changedSlide) renderPresent();
+    else highlightBlock();
   }
 
-  function gotoSlide(n, { fromNav } = {}) {
-    if (!DECK.some(s => s.n === n)) return;
-    if (fromNav && n !== slideN) {
+  // Canonical move to {slide, beat}. Audience redraws only when the slide changes.
+  function gotoBeat(nSlide, nBlock, opts) {
+    if (!DECK.some(s => s.n === nSlide)) return;
+    const fromNav = opts && opts.fromNav;
+    const changedSlide = nSlide !== slideN;
+    if (fromNav) {
       ensureClock();
       const setup = $('pvSetup');
       if (setup) setup.hidden = true;
     }
-    slideN = n;
-    line = 0;
-    wordPos = 0;
+    slideN = nSlide;
+    block = Math.max(0, Math.min(beatCount(nSlide) - 1, nBlock | 0));
+    wordPos = firstWordOfBlock(block);
     lastHeard = '';
     if (isPresent) {
-      renderPresent();
+      if (changedSlide) renderPresent();
+      else highlightBlock();
       broadcastState();
     }
   }
 
+  // Clicker Next/Prev walk the beat list; crossing a slide edge moves the audience.
   function nav(dir) {
-    const i = deckIndex(slideN);
-    const j = i + (dir === 'next' ? 1 : -1);
-    if (j < 0 || j >= DECK.length) return;
-    gotoSlide(DECK[j].n, { fromNav: true });
+    if (dir === 'next') {
+      if (block + 1 < beatCount(slideN)) { gotoBeat(slideN, block + 1, { fromNav: true }); return; }
+      const nx = nextSlide(slideN);
+      if (nx) gotoBeat(nx.n, 0, { fromNav: true });
+    } else {
+      if (block > 0) { gotoBeat(slideN, block - 1, { fromNav: true }); return; }
+      const pi = deckIndex(slideN) - 1;
+      if (pi >= 0) gotoBeat(DECK[pi].n, beatCount(DECK[pi].n) - 1, { fromNav: true });
+    }
+  }
+
+  // Emergency: skip whatever beats remain and land on the next slide's first beat.
+  function nextSlideNow() {
+    const nx = nextSlide(slideN);
+    if (nx) gotoBeat(nx.n, 0, { fromNav: true });
   }
 
   function isNextKey(e) {
@@ -240,49 +264,68 @@
     try { sessionStorage.setItem(STORE + '-fold', folded ? '1' : '0'); } catch (e) { /* ignore */ }
   }
 
-  function paintWords() {
+  function firstWordOfBlock(blk) {
+    const i = scriptWords.findIndex(w => w.block === blk);
+    return i >= 0 ? i : 0;
+  }
+
+  // Word-level marks are a voice-only reading aid; blank when voice is off.
+  function paintWordHint() {
     scriptWords.forEach((w, i) => {
-      w.el.classList.toggle('heard', i < wordPos);
-      w.el.classList.toggle('now', i === wordPos);
-    });
-    if (scriptWords[wordPos]) line = scriptWords[wordPos].line;
-    const box = $('pvScript');
-    if (!box) return;
-    box.querySelectorAll('.pv-row').forEach((el, idx) => {
-      el.classList.toggle('on', idx === line);
-      el.classList.toggle('past', idx < line);
+      const inBlock = w.block === block;
+      w.el.classList.toggle('heard', voiceOn && inBlock && i < wordPos);
+      w.el.classList.toggle('now', voiceOn && inBlock && i === wordPos);
     });
   }
 
-  function scrollToCurrent() {
+  function scrollBlockToRead(el) {
     const box = $('pvScript');
     if (!box) return;
-    const el = (scriptWords[wordPos] && scriptWords[wordPos].el) || box.querySelector('.pv-row.on');
     if (!el) {
-      box.scrollTop = 0;
+      if (box.scrollTo) box.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+      else box.scrollTop = 0;
       return;
     }
     const br = box.getBoundingClientRect();
     const er = el.getBoundingClientRect();
+    const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.20);
+    const top = Math.max(0, Math.round(y));
+    if (box.scrollTo) box.scrollTo({ top: top, behavior: reduceMotion ? 'auto' : 'smooth' });
+    else box.scrollTop = top;
+  }
+
+  function scrollToWord() {
+    const box = $('pvScript');
+    const w = scriptWords[wordPos];
+    if (!box || !w || !w.el) return;
+    const br = box.getBoundingClientRect();
+    const er = w.el.getBoundingClientRect();
     const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.32);
     box.scrollTop = Math.max(0, Math.round(y));
   }
 
-  function highlightLine() {
-    paintWords();
-    scrollToCurrent();
+  // Clicker path: highlight the whole active beat and pin its top near the read line.
+  function highlightBlock() {
+    const box = $('pvScript');
+    if (!box) return;
+    const onRows = [];
+    box.querySelectorAll('.pv-row').forEach(el => {
+      const b = +el.dataset.block;
+      const on = b === block;
+      el.classList.toggle('on', on);
+      el.classList.toggle('past', b < block);
+      el.classList.remove('on-first', 'on-last');
+      if (on) onRows.push(el);
+    });
+    if (onRows.length) {
+      onRows[0].classList.add('on-first');
+      onRows[onRows.length - 1].classList.add('on-last');
+    }
+    paintWordHint();
+    scrollBlockToRead(onRows[0] || null);
   }
 
-  function jumpToWord(idx) {
-    if (!scriptWords.length) return;
-    wordPos = Math.max(0, Math.min(scriptWords.length - 1, idx | 0));
-    line = scriptWords[wordPos].line;
-    persist();
-    paintWords();
-    scrollToCurrent();
-  }
-
-  function appendSayText(el, text, lineIdx) {
+  function appendSayText(el, text, blk) {
     String(text || '').split(/(\s+)/).forEach(tok => {
       if (!tok) return;
       if (/^\s+$/.test(tok)) {
@@ -291,13 +334,11 @@
       }
       const span = document.createElement('span');
       span.className = 'pv-w';
-      span.dataset.line = String(lineIdx);
+      span.dataset.block = String(blk);
       span.textContent = tok;
       span.onclick = ev => {
         ev.stopPropagation();
-        const i = scriptWords.findIndex(w => w.el === span);
-        if (i >= 0) jumpToWord(i);
-        broadcastState();
+        gotoBeat(slideN, blk, { fromNav: true });
       };
       el.appendChild(span);
     });
@@ -310,18 +351,16 @@
     box.querySelectorAll('.pv-w').forEach(span => {
       const norm = tokens(span.textContent)[0] || '';
       if (!norm) return;
-      scriptWords.push({ el: span, line: +span.dataset.line || 0, norm: norm });
+      scriptWords.push({ el: span, block: +span.dataset.block || 0, norm: norm });
     });
     if (wordPos >= scriptWords.length) wordPos = Math.max(0, scriptWords.length - 1);
   }
 
-  function renderPresent(opts) {
-    const keepLine = opts && opts.keepLine;
+  function renderPresent() {
     const s = slideOf(slideN);
     const nxt = nextSlide(slideN);
     const rows = rowsFor(s.n);
-    if (!keepLine) line = 0;
-    if (line >= rows.length) line = Math.max(0, rows.length - 1);
+    block = Math.max(0, Math.min(beatCount(s.n) - 1, block));
 
     const who = s.who || 'C';
     const whoEl = $('pvWho');
@@ -356,10 +395,10 @@
 
     const box = $('pvScript');
     box.innerHTML = '';
-    rows.forEach((row, idx) => {
+    rows.forEach((row) => {
       const el = document.createElement('div');
-      el.className = 'pv-row ' + row.kind + (idx === line ? ' on' : idx < line ? ' past' : '');
-      el.dataset.i = String(idx);
+      el.className = 'pv-row ' + row.kind;
+      el.dataset.block = String(row.block);
       if (row.kind === 'say') {
         if (row.showWho) {
           const tag = document.createElement('span');
@@ -367,7 +406,7 @@
           tag.textContent = speakerName(row.who);
           el.appendChild(tag);
         }
-        appendSayText(el, row.text, idx);
+        appendSayText(el, row.text, row.block);
       } else if (row.kind === 'do') {
         const lab = document.createElement('span'); lab.className = 'pv-lab'; lab.textContent = 'ACTION';
         el.appendChild(lab);
@@ -381,31 +420,19 @@
         el.appendChild(lab);
         el.appendChild(document.createTextNode(row.text));
       }
-      el.onclick = () => {
-        line = idx;
-        const first = scriptWords.findIndex(w => w.line === idx);
-        wordPos = first >= 0 ? first : wordPos;
-        persist();
-        highlightLine();
-        broadcastState();
-      };
+      el.onclick = () => gotoBeat(slideN, row.block, { fromNav: true });
       box.appendChild(el);
     });
     if (!rows.length) {
       const empty = document.createElement('div');
       empty.className = 'pv-row note';
+      empty.dataset.block = '0';
       empty.textContent = 'No script on this slide.';
       box.appendChild(empty);
     }
     rebuildWords();
-    if (!keepLine) wordPos = 0;
-    else {
-      const first = scriptWords.findIndex(w => w.line === line);
-      if (first >= 0 && (wordPos < first || (scriptWords[wordPos] && scriptWords[wordPos].line !== line))) {
-        wordPos = first;
-      }
-    }
-    requestAnimationFrame(() => highlightLine());
+    wordPos = firstWordOfBlock(block);
+    requestAnimationFrame(() => highlightBlock());
     tickClock();
   }
 
@@ -432,9 +459,10 @@
     }
   }
 
+  // Return the teleprompter to the first beat of THIS slide. Audience does not move.
   function resetNotes() {
-    line = 0;
-    wordPos = 0;
+    block = 0;
+    wordPos = firstWordOfBlock(0);
     lastHeard = '';
     persist();
     if (rec) {
@@ -442,10 +470,8 @@
       rec = null;
       if (voiceOn) startVoice();
     }
-    const box = $('pvScript');
-    if (box) box.scrollTop = 0;
-    highlightLine();
-    requestAnimationFrame(() => highlightLine());
+    highlightBlock();
+    requestAnimationFrame(() => highlightBlock());
   }
 
   function audienceUrl() {
@@ -523,61 +549,30 @@
     return miss + (x.length - i) + (y.length - j) <= 1;
   }
 
-  function uniqueIndex(word, from) {
-    let hit = -1;
-    for (let i = from; i < scriptWords.length; i++) {
-      if (!closeWord(word, scriptWords[i].norm)) continue;
-      if (hit >= 0) return -1;
-      hit = i;
-    }
-    return hit;
-  }
-
+  // Voice reading aid: advance the word marker WITHIN the current beat only.
+  // It never changes the canonical beat or slide — the clicker owns those.
   function followTranscript(text) {
-    if (!scriptWords.length) return;
+    if (!voiceOn || !scriptWords.length) return;
+    let lo = -1, hi = -1;
+    for (let i = 0; i < scriptWords.length; i++) {
+      if (scriptWords[i].block === block) { if (lo < 0) lo = i; hi = i; }
+    }
+    if (lo < 0) return;
     const heard = tokens(text);
-    if (heard.length < 1) return;
+    if (!heard.length) return;
     const tail = heard.slice(-16);
-    const from = wordPos;
-    let cursor = Math.max(0, from - 4);
+    let cursor = Math.max(lo, wordPos);
     let lastHit = -1;
-    let hits = 0;
-
     for (let t = 0; t < tail.length; t++) {
       const w = tail[t];
-      let found = -1;
-      const near = Math.min(scriptWords.length, cursor + 12);
-      for (let j = cursor; j < near; j++) {
-        if (closeWord(w, scriptWords[j].norm)) { found = j; break; }
-      }
-      if (found < 0 && w.length >= 5) {
-        const uniq = uniqueIndex(w, Math.max(0, from - 2));
-        if (uniq >= 0) found = uniq;
-      }
-      if (found < 0) continue;
-      hits++;
-      lastHit = found;
-      cursor = found + 1;
-    }
-
-    if (lastHit < 0 && tail.length) {
-      const last = tail[tail.length - 1];
-      if (last.length >= 5) {
-        const uniq = uniqueIndex(last, from);
-        if (uniq >= 0) { lastHit = uniq; hits = 1; }
+      for (let j = cursor; j <= hi; j++) {
+        if (closeWord(w, scriptWords[j].norm)) { lastHit = j; cursor = j + 1; break; }
       }
     }
-
-    if (lastHit < 0 || hits < 1) return;
-    if (lastHit < from - 6) return;
-    if (lastHit !== wordPos) {
-      wordPos = lastHit;
-      line = scriptWords[wordPos].line;
-      persist();
-      paintWords();
-    }
-    scrollToCurrent();
-    requestAnimationFrame(scrollToCurrent);
+    if (lastHit < 0 || lastHit === wordPos) { scrollToWord(); return; }
+    wordPos = Math.max(lo, Math.min(hi, lastHit));
+    paintWordHint();
+    scrollToWord();
   }
   function setHearCaption(text, live) {
     const wrap = $('pvHearWrap');
@@ -657,11 +652,13 @@
     }
     stopVoice();
     lastHeard = '';
+    wordPos = firstWordOfBlock(block);
     const app = $('presentApp');
     if (app) app.classList.add('pv-follow');
     setHearCaption('', false);
     startHearMeter();
-    requestAnimationFrame(scrollToCurrent);
+    paintWordHint();
+    requestAnimationFrame(scrollToWord);
     rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
@@ -715,6 +712,7 @@
     $('pvBack').onclick = () => nav('prev');
     $('pvNext').onclick = () => nav('next');
     $('pvReset').onclick = resetNotes;
+    const nsb = $('pvNextSlide'); if (nsb) nsb.onclick = nextSlideNow;
     $('pvResync').onclick = () => broadcastState({ force: true });
     $('pvOpenAud').onclick = openAudience;
     $('pvFold').onclick = () => setFold(!folded);
@@ -727,10 +725,10 @@
       voiceOn = !!e.target.checked;
       $('pvVoiceLab').classList.toggle('on', voiceOn);
       if (voiceOn) startVoice();
-      else stopVoice();
+      else { stopVoice(); highlightBlock(); }
     };
     setInterval(tickClock, 1000);
-    renderPresent({ keepLine: true });
+    renderPresent();
     broadcastState();
     window.addEventListener('beforeunload', e => {
       e.preventDefault();

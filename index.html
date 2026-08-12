@@ -455,6 +455,9 @@ html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!im
 .pv-lab{display:inline-block;font-style:normal;font-size:12px;letter-spacing:.12em;font-weight:800;
   border:1px solid currentColor;border-radius:4px;padding:1px 7px;margin-right:8px;vertical-align:middle}
 .pv-row.on{border-color:#f0b429;background:rgba(240,180,41,.12);box-shadow:inset 0 0 0 1px rgba(240,180,41,.35)}
+/* a beat that spans several rows reads as one connected block */
+.pv-row.on:not(.on-last){margin-bottom:0;border-bottom-color:transparent;border-bottom-left-radius:0;border-bottom-right-radius:0;box-shadow:none}
+.pv-row.on:not(.on-first){border-top-color:transparent;border-top-left-radius:0;border-top-right-radius:0;box-shadow:none}
 .pv-row.past{opacity:.72}
 .pv-w{border-radius:4px;padding:0 1px}
 .pv-w.heard{color:#8fa3b6}
@@ -634,11 +637,12 @@ html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!im
     <button type="button" id="pvFold" class="ctl" title="Hide the header so the script is larger">Collapse</button>
     <span id="pvMini" class="pv-mini"></span>
     <button type="button" id="pvOpenAud" class="ctl go" title="Opens a second window of slides only. Drag it to HDMI, click it, then press F for fullscreen.">Open Audience View</button>
-    <button type="button" id="pvBack" class="ctl" title="Previous slide (← or Page Up)">◀ Back</button>
-    <button type="button" id="pvNext" class="ctl" title="Next slide (→ or Page Down)">Next ▶</button>
-    <button type="button" id="pvReset" class="ctl panic" title="Keep this slide. Restart the notes.">Reset Notes</button>
+    <button type="button" id="pvBack" class="ctl" title="Previous beat (← or Page Up)">◀ Back</button>
+    <button type="button" id="pvNext" class="ctl go" title="Next beat (→ or Page Down)">Next ▶</button>
+    <button type="button" id="pvNextSlide" class="ctl" title="Emergency: jump to the first beat of the next slide (skips remaining beats)">Next slide ▶▶</button>
+    <button type="button" id="pvReset" class="ctl panic" title="Keep this slide on the projector. Jump the script back to the first beat.">Reset Notes</button>
     <button type="button" id="pvResync" class="ctl" title="Emergency: push this slide to the projector">Resync Displays</button>
-    <span class="pv-keys">Clicker: ← → or Page Up/Down</span>
+    <span class="pv-keys">Clicker ← → advances a beat; the slide changes when a beat crosses into the next slide</span>
     <label class="pv-voice" id="pvVoiceLab" title="Optional. Off for the talk. Never changes slides."><input type="checkbox" id="pvVoice"> Follow My Voice</label>
     <span id="pvHearWrap" class="pv-hear" hidden>
       <span class="meter" aria-hidden="true"><i id="pvHearBar"></i></span>
