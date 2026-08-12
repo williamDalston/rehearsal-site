@@ -370,6 +370,14 @@
     $('pvSlide').textContent = 'SLIDE ' + s.n + ' / ' + DECK_LEN;
     $('pvAct').textContent = s.act || '';
 
+    // Orientation only: mirror the audience slide. Non-interactive.
+    const thumb = $('pvSlideImg');
+    if (thumb) {
+      const tsrc = 'slides/' + String(s.n).padStart(2, '0') + '.jpg';
+      if (thumb.getAttribute('src') !== tsrc) thumb.src = tsrc;
+      thumb.alt = 'Slide ' + s.n;
+    }
+
     const hand = $('pvHand');
     if (nxt && nxt.who && nxt.who !== who && nxt.who !== 'NONE') {
       hand.hidden = false;

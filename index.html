@@ -404,7 +404,10 @@ html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!im
 
 .pv{display:flex;flex-direction:column;height:100%;min-height:0;background:#0d1520;color:#e8eef4;
   font:18px/1.35 "Segoe UI",ui-sans-serif,system-ui,sans-serif}
-.pv-top{flex:none;padding:14px 18px 10px;border-bottom:1px solid #2a3a4d}
+.pv-top{flex:none;display:flex;gap:16px;align-items:flex-start;padding:14px 18px 10px;border-bottom:1px solid #2a3a4d}
+.pv-top-main{flex:1 1 auto;min-width:0}
+.pv-thumb{flex:none;align-self:flex-start;width:clamp(160px,22vw,280px);aspect-ratio:16/9;object-fit:contain;background:#0a1119;border:1px solid #2a3a4d;border-radius:10px;display:block}
+@media (max-width:720px){.pv-thumb{display:none}}
 .pv-who{
   font-size:clamp(28px,4.2vw,52px);font-weight:800;letter-spacing:.04em;line-height:1;
   padding:8px 14px;border-radius:10px;display:inline-block;margin-bottom:8px;
@@ -619,14 +622,17 @@ html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!im
 
 <div id="presentApp" class="pv">
   <div class="pv-top">
-    <div id="pvWho" class="pv-who C">CAROLINE</div>
-    <div class="pv-meta">
-      <span id="pvSlide" class="pv-slide">SLIDE 1 / 43</span>
-      <span id="pvAct"></span>
-      <span id="pvTime" class="pv-time">Elapsed 0:00 · Slot ~30 min</span>
-      <span id="pvPace" class="pv-pace ok">On pace</span>
+    <div class="pv-top-main">
+      <div id="pvWho" class="pv-who C">CAROLINE</div>
+      <div class="pv-meta">
+        <span id="pvSlide" class="pv-slide">SLIDE 1 / 43</span>
+        <span id="pvAct"></span>
+        <span id="pvTime" class="pv-time">Elapsed 0:00 · Slot ~30 min</span>
+        <span id="pvPace" class="pv-pace ok">On pace</span>
+      </div>
+      <div id="pvHand" class="pv-hand" hidden></div>
     </div>
-    <div id="pvHand" class="pv-hand" hidden></div>
+    <img id="pvSlideImg" class="pv-thumb" alt="" draggable="false" title="What the audience sees now">
   </div>
   <div id="pvSetup" class="pv-setup">
     <b>Show day:</b> Open Audience View → drag that window to HDMI → click it → press <b>F</b> (or F8) for fullscreen. Exit with <b>F</b> or <b>Esc</b>. Do not use F11.
