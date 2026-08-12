@@ -439,7 +439,13 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
 .pv-lab{display:inline-block;font-style:normal;font-size:12px;letter-spacing:.12em;font-weight:800;
   border:1px solid currentColor;border-radius:4px;padding:1px 7px;margin-right:8px;vertical-align:middle}
 .pv-row.on{border-color:#f0b429;background:rgba(240,180,41,.12);box-shadow:inset 0 0 0 1px rgba(240,180,41,.35)}
-.pv-row.past{opacity:.55}
+.pv-row.past{opacity:.72}
+.pv-w{border-radius:4px;padding:0 1px}
+.pv-w.heard{color:#8fa3b6}
+.pv-w.now{
+  background:#f0b429;color:#0d1520;font-weight:800;
+  box-shadow:0 0 0 3px rgba(240,180,41,.4);
+}
 .pv-next{
   flex:none;padding:12px 22px 16px;border-top:1px solid #2a3a4d;background:#141e2b;
   font-size:clamp(16px,1.6vw,22px);
@@ -448,6 +454,11 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
 .pv-voice{margin-left:auto;display:flex;align-items:center;gap:8px;color:#64788d;font-size:13px;font-weight:600}
 .pv-voice.on{color:#3ec98a}
 .pv-voice input{width:18px;height:18px;accent-color:#3ec98a}
+.pv-mini{display:none;font-weight:800;letter-spacing:.04em;align-self:center;color:#e8eef4}
+.pv.pv-compact .pv-top,
+.pv.pv-compact #pvSetup,
+.pv.pv-compact .pv-next{display:none!important}
+.pv.pv-compact .pv-mini{display:inline-flex}
 </style>
 </head>
 <body>
@@ -592,6 +603,8 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
   </div>
   <div id="pvAlert" class="err pv-alert hidden" role="alert"></div>
   <div class="pv-bar">
+    <button type="button" id="pvFold" class="ctl" title="Hide the header so the script is larger">Collapse</button>
+    <span id="pvMini" class="pv-mini"></span>
     <button type="button" id="pvOpenAud" class="ctl go" title="Opens a second window of slides only. Practice beside this window, or drag it to HDMI and press F11.">Open Audience View</button>
     <button type="button" id="pvBack" class="ctl" title="Previous slide (← or Page Up)">◀ Back</button>
     <button type="button" id="pvNext" class="ctl" title="Next slide (→ or Page Down)">Next ▶</button>

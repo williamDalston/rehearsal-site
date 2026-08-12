@@ -27,6 +27,10 @@
   let clockStart = null;
   let rec = null;
   let voiceOn = false;
+  let wordPos = 0;
+  let scriptWords = [];
+  let folded = false;
+  let lastHeard = '';
 
   let ch = null;
   try { ch = new BroadcastChannel(CHANNEL); }
@@ -95,7 +99,7 @@
   function persist() {
     try {
       sessionStorage.setItem(STORE, JSON.stringify({
-        slide: slideN, line: line, rev: rev, clockStart: clockStart
+        slide: slideN, line: line, rev: rev, clockStart: clockStart, wordPos: wordPos
       }));
     } catch (e) { /* private mode */ }
   }
@@ -111,6 +115,7 @@
         lastRev = s.rev;
       }
       if (typeof s.clockStart === 'number' && s.clockStart > 0) clockStart = s.clockStart;
+      if (typeof s.wordPos === 'number') wordPos = Math.max(0, s.wordPos | 0);
     } catch (e) { /* ignore */ }
   }
 
@@ -155,6 +160,8 @@
     }
     slideN = n;
     line = 0;
+    wordPos = 0;
+    lastHeard = '';
     if (isPresent) {
       renderPresent();
       broadcastState();
@@ -209,20 +216,92 @@
   }
 
   /* ---------- presenter ---------- */
-  function highlightLine() {
+  function setFold(on) {
+    folded = !!on;
+    const app = $('presentApp');
+    const btn = $('pvFold');
+    if (app) app.classList.toggle('pv-compact', folded);
+    if (btn) btn.textContent = folded ? 'Expand' : 'Collapse';
+    try { sessionStorage.setItem(STORE + '-fold', folded ? '1' : '0'); } catch (e) { /* ignore */ }
+  }
+
+  function paintWords() {
+    scriptWords.forEach((w, i) => {
+      w.el.classList.toggle('heard', i < wordPos);
+      w.el.classList.toggle('now', i === wordPos);
+    });
+    if (scriptWords[wordPos]) line = scriptWords[wordPos].line;
     const box = $('pvScript');
     if (!box) return;
-    const nodes = box.querySelectorAll('.pv-row');
-    nodes.forEach((el, idx) => {
+    box.querySelectorAll('.pv-row').forEach((el, idx) => {
       el.classList.toggle('on', idx === line);
       el.classList.toggle('past', idx < line);
     });
-    if (line === 0) {
+  }
+
+  function scrollToCurrent(force) {
+    const box = $('pvScript');
+    if (!box) return;
+    if (wordPos <= 0 && line === 0) {
       box.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
       return;
     }
-    const on = box.querySelector('.pv-row.on');
-    if (on) on.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    const el = (scriptWords[wordPos] && scriptWords[wordPos].el) || box.querySelector('.pv-row.on');
+    if (!el) return;
+    const er = el.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    const lo = br.top + br.height * 0.18;
+    const hi = br.top + br.height * 0.62;
+    if (force || er.top < lo || er.bottom > hi) {
+      el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    }
+  }
+
+  function highlightLine() {
+    paintWords();
+    scrollToCurrent(true);
+  }
+
+  function jumpToWord(idx) {
+    if (!scriptWords.length) return;
+    wordPos = Math.max(0, Math.min(scriptWords.length - 1, idx | 0));
+    line = scriptWords[wordPos].line;
+    persist();
+    paintWords();
+    scrollToCurrent(true);
+  }
+
+  function appendSayText(el, text, lineIdx) {
+    String(text || '').split(/(\s+)/).forEach(tok => {
+      if (!tok) return;
+      if (/^\s+$/.test(tok)) {
+        el.appendChild(document.createTextNode(tok));
+        return;
+      }
+      const span = document.createElement('span');
+      span.className = 'pv-w';
+      span.dataset.line = String(lineIdx);
+      span.textContent = tok;
+      span.onclick = ev => {
+        ev.stopPropagation();
+        const i = scriptWords.findIndex(w => w.el === span);
+        if (i >= 0) jumpToWord(i);
+        broadcastState();
+      };
+      el.appendChild(span);
+    });
+  }
+
+  function rebuildWords() {
+    scriptWords = [];
+    const box = $('pvScript');
+    if (!box) return;
+    box.querySelectorAll('.pv-w').forEach(span => {
+      const norm = tokens(span.textContent)[0] || '';
+      if (!norm) return;
+      scriptWords.push({ el: span, line: +span.dataset.line || 0, norm: norm });
+    });
+    if (wordPos >= scriptWords.length) wordPos = Math.max(0, scriptWords.length - 1);
   }
 
   function renderPresent(opts) {
@@ -255,6 +334,15 @@
     if (!nxt) nextBox.textContent = 'End of deck';
     else nextBox.textContent = speakerName(nxt.who) + ' · “' + firstSay(nxt) + '”';
 
+    const mini = $('pvMini');
+    if (mini) {
+      let t = speakerName(who) + ' · SLIDE ' + s.n + ' / ' + DECK_LEN;
+      if (nxt && nxt.who && nxt.who !== who && nxt.who !== 'NONE') {
+        t += ' · HANDOFF → ' + speakerName(nxt.who);
+      }
+      mini.textContent = t;
+    }
+
     const box = $('pvScript');
     box.innerHTML = '';
     rows.forEach((row, idx) => {
@@ -268,7 +356,7 @@
           tag.textContent = speakerName(row.who);
           el.appendChild(tag);
         }
-        el.appendChild(document.createTextNode(row.text));
+        appendSayText(el, row.text, idx);
       } else if (row.kind === 'do') {
         const lab = document.createElement('span'); lab.className = 'pv-lab'; lab.textContent = 'ACTION';
         el.appendChild(lab);
@@ -284,6 +372,8 @@
       }
       el.onclick = () => {
         line = idx;
+        const first = scriptWords.findIndex(w => w.line === idx);
+        wordPos = first >= 0 ? first : wordPos;
         persist();
         highlightLine();
         broadcastState();
@@ -295,6 +385,14 @@
       empty.className = 'pv-row note';
       empty.textContent = 'No script on this slide.';
       box.appendChild(empty);
+    }
+    rebuildWords();
+    if (!keepLine) wordPos = 0;
+    else {
+      const first = scriptWords.findIndex(w => w.line === line);
+      if (first >= 0 && (wordPos < first || (scriptWords[wordPos] && scriptWords[wordPos].line !== line))) {
+        wordPos = first;
+      }
     }
     requestAnimationFrame(() => highlightLine());
     tickClock();
@@ -325,6 +423,8 @@
 
   function resetNotes() {
     line = 0;
+    wordPos = 0;
+    lastHeard = '';
     persist();
     if (rec) {
       try { rec.abort(); } catch (e) { /* ignore */ }
@@ -367,35 +467,68 @@
   }
 
   /* ---------- optional speech follow (never changes slides) ---------- */
-  function norm(s) {
-    return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const FILLER = { um: 1, uh: 1, er: 1, ah: 1, hmm: 1, huh: 1, mm: 1, mmm: 1, uhuh: 1 };
+
+  function tokens(s) {
+    return String(s || '').toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w && !FILLER[w]);
   }
-  function score(a, b) {
-    const aw = norm(a).split(' ').filter(w => w.length > 2);
-    const bw = new Set(norm(b).split(' ').filter(w => w.length > 2));
-    if (!aw.length || !bw.size) return 0;
-    let hit = 0;
-    aw.forEach(w => { if (bw.has(w)) hit++; });
-    return hit / aw.length;
-  }
-  function followTranscript(text) {
-    const rows = rowsFor(slideN);
-    const sayIdx = [];
-    rows.forEach((r, i) => { if (r.kind === 'say') sayIdx.push(i); });
-    if (!sayIdx.length) return;
-    const curPos = sayIdx.findIndex(i => i >= line);
-    const from = curPos < 0 ? sayIdx.length - 1 : curPos;
-    const candidates = sayIdx.slice(from, from + 2);
-    let best = line, bestScore = 0.45;
-    candidates.forEach(i => {
-      const sc = score(text, rows[i].text);
-      if (sc > bestScore) { bestScore = sc; best = i; }
-    });
-    if (best > line && bestScore >= 0.45) {
-      line = best;
-      persist();
-      highlightLine();
+
+  function closeWord(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return true;
+    if (Math.abs(a.length - b.length) > 1 || a.length < 5 || b.length < 5) return false;
+    const x = a.length >= b.length ? a : b;
+    const y = a.length >= b.length ? b : a;
+    let i = 0, j = 0, miss = 0;
+    while (i < x.length && j < y.length) {
+      if (x[i] === y[j]) { i++; j++; continue; }
+      miss++;
+      if (miss > 1) return false;
+      if (x.length > y.length) i++;
+      else { i++; j++; }
     }
+    return miss + (x.length - i) + (y.length - j) <= 1;
+  }
+
+  function followTranscript(text) {
+    if (!scriptWords.length) return;
+    const heard = tokens(text);
+    if (heard.length < 1) return;
+    const tail = heard.slice(-14);
+    const from = wordPos;
+    const lo = Math.max(0, from - 6);
+    const hi = Math.min(scriptWords.length, from + 48);
+    let bestN = 0, bestPos = from;
+
+    for (let o = 0; o < tail.length; o++) {
+      const seq = tail.slice(o);
+      if (!seq.length) continue;
+      for (let i = lo; i < hi; i++) {
+        let n = 0;
+        while (n < seq.length && i + n < scriptWords.length && closeWord(seq[n], scriptWords[i + n].norm)) n++;
+        const enough = n >= 2 || (n === 1 && seq[0].length >= 4);
+        if (!enough) continue;
+        const pos = Math.min(scriptWords.length - 1, i + n - 1);
+        if (n > bestN || (n === bestN && Math.abs(pos - from) < Math.abs(bestPos - from))) {
+          bestN = n;
+          bestPos = pos;
+        }
+      }
+    }
+    if (bestN < 1) return;
+    if (bestPos < from - 8) return;
+    if (bestPos > from + 24 && bestN < 3) return;
+    if (bestPos === wordPos) return;
+    wordPos = bestPos;
+    line = scriptWords[wordPos].line;
+    persist();
+    paintWords();
+    scrollToCurrent(false);
   }
   function speechAvailable() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -409,14 +542,26 @@
       return;
     }
     stopVoice();
+    lastHeard = '';
     rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
+    rec.maxAlternatives = 5;
     rec.lang = 'en-US';
     rec.onresult = ev => {
-      let t = '';
-      for (let i = ev.resultIndex; i < ev.results.length; i++) t += ev.results[i][0].transcript + ' ';
-      followTranscript(t);
+      let interim = '';
+      let finals = lastHeard;
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const alt = ev.results[i][0] && ev.results[i][0].transcript || '';
+        if (ev.results[i].isFinal) finals += ' ' + alt;
+        else interim += ' ' + alt;
+        for (let a = 1; a < ev.results[i].length; a++) {
+          const extra = ev.results[i][a] && ev.results[i][a].transcript;
+          if (extra) followTranscript(finals + ' ' + extra + ' ' + interim);
+        }
+      }
+      lastHeard = finals.replace(/\s+/g, ' ').trim().split(' ').slice(-40).join(' ');
+      followTranscript(lastHeard + ' ' + interim);
     };
     rec.onerror = () => { /* stay on current line; slides never move */ };
     rec.onend = () => { if (voiceOn) { try { rec.start(); } catch (e) { /* ignore */ } } };
@@ -441,6 +586,8 @@
     $('pvReset').onclick = resetNotes;
     $('pvResync').onclick = () => broadcastState({ force: true });
     $('pvOpenAud').onclick = openAudience;
+    $('pvFold').onclick = () => setFold(!folded);
+    try { if (sessionStorage.getItem(STORE + '-fold') === '1') setFold(true); } catch (e) { /* ignore */ }
     if (!speechAvailable()) {
       $('pvVoice').disabled = true;
       $('pvVoiceLab').title = 'Speech recognition is not available in this browser';
