@@ -448,22 +448,40 @@
     requestAnimationFrame(() => highlightLine());
   }
 
-  function openAudience() {
+  function audienceUrl() {
     const u = new URL(location.href);
     u.searchParams.set('mode', 'audience');
-    const aw = Math.max(720, Math.floor((screen.availWidth || 1280) / 2));
-    const ah = Math.max(480, screen.availHeight || 800);
+    return u.toString();
+  }
+  function popupBox() {
+    const aw = Math.max(800, Math.floor((screen.availWidth || 1280) * 0.55));
+    const ah = Math.max(520, (screen.availHeight || 800) - 40);
     const left = Math.max(0, (screen.availLeft || 0) + (screen.availWidth || 1280) - aw);
     const top = screen.availTop || 0;
-    const w = window.open(
-      u.toString(),
-      'house-audience',
-      'width=' + aw + ',height=' + ah + ',left=' + left + ',top=' + top + ',menubar=no,toolbar=no,location=yes'
-    );
+    return { aw: aw, ah: ah, left: left, top: top };
+  }
+  function openAudiencePopup() {
+    const box = popupBox();
+    const feats = 'popup=yes,width=' + box.aw + ',height=' + box.ah
+      + ',left=' + box.left + ',top=' + box.top
+      + ',menubar=no,toolbar=no,location=no,status=no,scrollbars=no,resizable=yes';
+    const w = window.open(audienceUrl(), 'house-audience', feats);
+    if (w) {
+      try {
+        w.resizeTo(box.aw, box.ah);
+        w.moveTo(box.left, box.top);
+        w.focus();
+      } catch (e) { /* ignore */ }
+    }
+    return w;
+  }
+
+  function openAudience() {
+    const w = openAudiencePopup();
     const alert = $('pvAlert');
     if (!w) {
       if (alert) {
-        alert.textContent = 'Popup blocked. Allow popups, or open this in another tab: ' + u.toString();
+        alert.textContent = 'Popup blocked. In the address bar, allow popups for this site, then click Open Audience View again.';
         alert.classList.remove('hidden');
       }
       return;
@@ -472,7 +490,6 @@
       alert.textContent = '';
       alert.classList.add('hidden');
     }
-    try { w.focus(); } catch (e) { /* ignore */ }
     setTimeout(() => broadcastState({ force: true }), 250);
     setTimeout(() => broadcastState({ force: true }), 1000);
   }
@@ -753,8 +770,22 @@
       }
       location.href = u.toString();
     }
-    const backBtn = $('audBack');
-    if (backBtn) backBtn.onclick = leaveAudience;
+    const popBtn = $('audPop');
+    if (window.opener && !window.opener.closed) {
+      if (popBtn) popBtn.hidden = true;
+    } else if (popBtn) {
+      popBtn.onclick = () => {
+        const w = openAudiencePopup();
+        if (!w) {
+          popBtn.textContent = 'Allow popups, then click again';
+          return;
+        }
+        allowClose = true;
+        const u = new URL(location.href);
+        u.searchParams.set('mode', 'present');
+        location.href = u.toString();
+      };
+    }
     window.addEventListener('beforeunload', e => {
       if (allowClose) return;
       e.preventDefault();
