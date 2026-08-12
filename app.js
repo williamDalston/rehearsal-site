@@ -193,6 +193,7 @@ async function camOn() {
   }
   $('live').srcObject = stream;
   $('pip').classList.remove('hidden');
+  applySavedPipPos();
   $('camBtn').textContent = 'Camera on';
   $('camBtn').classList.add('on');
   $('camBtn').setAttribute('aria-pressed', 'true');
@@ -828,6 +829,11 @@ async function loadPlaylistItem(idx, { autoplay = true } = {}) {
   v.src = playUrl;
   $('mTitle').textContent = 'Slide ' + item.n + ' — ' + item.title;
   $('mPos').textContent = (idx + 1) + ' / ' + playlist.length;
+  const mImg = $('mSlide');
+  if (mImg) {
+    mImg.src = 'slides/' + String(item.n).padStart(2, '0') + '.jpg';
+    mImg.alt = 'Slide ' + item.n + ' — ' + item.title;
+  }
   $('mPrev').disabled = idx <= 0;
   $('mNext').disabled = idx >= playlist.length - 1;
 
@@ -895,6 +901,8 @@ function closeTake() {
   $('playback').pause();
   $('playback').removeAttribute('src');
   $('playback').load();
+  const mImg = $('mSlide');
+  if (mImg) { mImg.removeAttribute('src'); mImg.alt = ''; }
   $('modal').classList.add('hidden');
   setModalMode(false);
   revokePreload();
@@ -951,6 +959,7 @@ $('camBtn').onclick = () => {
   if (stream) {
     const hidden = $('pip').classList.toggle('hidden');
     $('camBtn').textContent = hidden ? 'Camera hidden' : 'Camera on';
+    if (!hidden) applySavedPipPos();
   } else camOn();
 };
 $('pipX').onclick = () => {
@@ -1104,6 +1113,89 @@ document.addEventListener('keydown', e => {
     }
   }, { passive: true });
 })();
+
+/* ---------------- draggable camera pip ---------------- */
+const PIP_MARGIN = 6;
+
+function clampPip() {
+  const pip = $('pip');
+  if (!pip || pip.classList.contains('hidden')) return;
+  const w = pip.offsetWidth, h = pip.offsetHeight;
+  if (!w || !h) return;
+  const r = pip.getBoundingClientRect();
+  const maxLeft = Math.max(PIP_MARGIN, window.innerWidth - w - PIP_MARGIN);
+  const maxTop = Math.max(PIP_MARGIN, window.innerHeight - h - PIP_MARGIN);
+  const left = Math.min(Math.max(PIP_MARGIN, r.left), maxLeft);
+  const top = Math.min(Math.max(PIP_MARGIN, r.top), maxTop);
+  pip.style.left = left + 'px';
+  pip.style.top = top + 'px';
+  pip.style.right = 'auto';
+  pip.style.bottom = 'auto';
+}
+
+function savePipPos() {
+  try {
+    const pip = $('pip');
+    if (pip.style.left && pip.style.top) {
+      localStorage.setItem('pipPos', JSON.stringify({ left: parseFloat(pip.style.left), top: parseFloat(pip.style.top) }));
+    }
+  } catch (e) { /* position just won't persist */ }
+}
+
+// Called after the pip is made visible: restore its last spot (clamped) if any.
+function applySavedPipPos() {
+  const pip = $('pip');
+  if (!pip || pip.classList.contains('hidden')) return;
+  let pos = null;
+  try { pos = JSON.parse(localStorage.getItem('pipPos') || 'null'); } catch (e) { pos = null; }
+  if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+    pip.style.left = pos.left + 'px';
+    pip.style.top = pos.top + 'px';
+    pip.style.right = 'auto';
+    pip.style.bottom = 'auto';
+  }
+  clampPip();
+}
+
+(function enablePipDrag() {
+  const pip = $('pip');
+  if (!pip) return;
+  let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  pip.addEventListener('pointerdown', e => {
+    if (e.target.closest('#pipX')) return;            // let the hide button work
+    if (e.button != null && e.button > 0) return;     // primary button / touch only
+    const r = pip.getBoundingClientRect();
+    pip.style.left = r.left + 'px';                   // switch from right/bottom anchoring
+    pip.style.top = r.top + 'px';
+    pip.style.right = 'auto';
+    pip.style.bottom = 'auto';
+    dragging = true;
+    sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
+    pip.classList.add('dragging');
+    try { pip.setPointerCapture(e.pointerId); } catch (er) { /* ignore */ }
+  });
+  pip.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const w = pip.offsetWidth, h = pip.offsetHeight;
+    const maxLeft = Math.max(PIP_MARGIN, window.innerWidth - w - PIP_MARGIN);
+    const maxTop = Math.max(PIP_MARGIN, window.innerHeight - h - PIP_MARGIN);
+    const left = Math.min(Math.max(PIP_MARGIN, ox + (e.clientX - sx)), maxLeft);
+    const top = Math.min(Math.max(PIP_MARGIN, oy + (e.clientY - sy)), maxTop);
+    pip.style.left = left + 'px';
+    pip.style.top = top + 'px';
+  });
+  const end = e => {
+    if (!dragging) return;
+    dragging = false;
+    pip.classList.remove('dragging');
+    try { pip.releasePointerCapture(e.pointerId); } catch (er) { /* ignore */ }
+    savePipPos();
+  };
+  pip.addEventListener('pointerup', end);
+  pip.addEventListener('pointercancel', end);
+})();
+
+window.addEventListener('resize', clampPip);
 
 window.addEventListener('beforeunload', e => {
   if (recording) { e.preventDefault(); e.returnValue = ''; }

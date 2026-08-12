@@ -204,7 +204,7 @@ main{
   border-color:rgba(62,201,138,.45);color:var(--green);font-weight:600;
 }
 #playAll:hover{border-color:var(--green);color:#7dffc0}
-.modal.run .box{max-width:min(860px,100%)}
+.modal.run .box{max-width:min(1180px,100%)}
 .modal .mbar .mpos{font-variant-numeric:tabular-nums;color:var(--faint);font-size:12px;white-space:nowrap}
 .modal .mnav{display:none;gap:6px}
 .modal.run .mnav{display:flex}
@@ -212,16 +212,19 @@ main{
 .modal .msub{display:none;font-size:12px;color:var(--faint);margin-top:2px}
 .modal.run .msub{display:block}
 
-/* camera pip */
+/* camera pip — draggable */
 .pip{
   position:fixed;right:max(12px,var(--safe-r));bottom:calc(var(--recbar-h) + 12px + var(--safe-b));
   width:min(210px,42vw);border-radius:12px;overflow:hidden;
   border:1px solid var(--line);background:#000;box-shadow:var(--shadow);z-index:40;
-  max-width:280px;
+  max-width:280px;cursor:move;touch-action:none;user-select:none;-webkit-user-select:none;
 }
 .pip.hidden{display:none}
+.pip.dragging{cursor:grabbing;box-shadow:0 18px 44px rgba(0,0,0,.6);opacity:.97}
 .pip video{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#000}
 .pip .pipbar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--panel);font-size:11px;color:var(--dim)}
+.pip .pipbar .drag-hint{color:var(--faint)}
+.pip .x{cursor:pointer}
 .pip .lvl{flex:1;height:4px;border-radius:3px;background:#22303f;overflow:hidden}
 .pip .lvl i{display:block;height:100%;width:0;background:var(--green);transition:width .08s}
 .pip .x{color:var(--faint);font-size:16px;line-height:1;padding:4px 6px;min-width:32px;min-height:32px}
@@ -241,6 +244,19 @@ main{
 }
 .modal .box video{width:100%;display:block;background:#000;max-height:min(64vh,70dvh)}
 .modal .mbar{display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:13px;color:var(--dim);flex-wrap:wrap}
+
+/* slide-beside-video during a continuous run */
+.mstage{display:block;min-height:0}
+.mslide{display:none}
+.modal.run .mstage{display:flex;flex-direction:row;gap:2px;background:#0a1119;height:min(60vh,66dvh)}
+.modal.run .mstage>*{flex:1 1 50%;width:50%;min-width:0;height:100%;max-height:none;object-fit:contain;background:#0a1119}
+.modal.run .mslide{display:block}
+@media (max-width:700px){
+  .modal.run .mstage{flex-direction:column;height:auto}
+  .modal.run .mstage>*{width:100%;flex:none}
+  .modal.run .mslide{height:30vh}
+  .modal.run .mstage>video{height:auto;max-height:42vh}
+}
 
 .bar{height:3px;background:#1b2836;flex:none}
 .bar i{display:block;height:100%;background:var(--gold);transition:width .25s ease}
@@ -428,17 +444,20 @@ main{
   </div>
 </div>
 
-<div id="pip" class="pip hidden">
+<div id="pip" class="pip hidden" title="Drag to move the camera">
   <video id="live" autoplay playsinline muted></video>
   <div class="pipbar">
-    <span>mic</span><span class="lvl"><i id="lvl"></i></span>
+    <span class="drag-hint" aria-hidden="true">⠿</span><span>mic</span><span class="lvl"><i id="lvl"></i></span>
     <button class="x" id="pipX" title="Hide camera" aria-label="Hide camera">✕</button>
   </div>
 </div>
 
 <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Playback">
   <div class="box">
-    <video id="playback" controls playsinline></video>
+    <div class="mstage">
+      <img id="mSlide" class="mslide" alt="">
+      <video id="playback" controls playsinline></video>
+    </div>
     <div class="mbar">
       <div style="min-width:0;flex:1">
         <b id="mTitle">Take</b>
