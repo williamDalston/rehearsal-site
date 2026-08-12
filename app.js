@@ -718,13 +718,32 @@ function flipTo(which) {
   setMobileView(which);
 }
 
-document.querySelector('.slide-wrap').addEventListener('click', () => flipTo('script'));
+let suppressSlideFlipUntil = 0;
+let scriptPtrOrigin = null; // 'edit' | 'other' — avoid flip after drag-selecting text
+
+document.querySelector('.slide-wrap').addEventListener('click', e => {
+  if (Date.now() < suppressSlideFlipUntil) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  flipTo('script');
+});
+
+$('script').addEventListener('pointerdown', e => {
+  scriptPtrOrigin = e.target.closest('.edit') ? 'edit' : 'other';
+});
 $('script').addEventListener('click', e => {
+  // Drag-select that ends outside the edit field should not flip.
+  if (scriptPtrOrigin === 'edit') { scriptPtrOrigin = null; return; }
+  scriptPtrOrigin = null;
   // Anywhere in the script pane that isn't editable text / a control → back to slide.
   if (e.target.closest('.edit, button, a, select, input')) return;
+  // Ignore tiny accidental clicks while a text selection is active in the script.
+  const sel = window.getSelection && window.getSelection();
+  if (sel && !sel.isCollapsed && $('script').contains(sel.anchorNode)) return;
   flipTo('slide');
 });
-// Also: clicking the script chrome (header empty space / tags) flips back.
 document.querySelector('.pane-script .pane-hd').addEventListener('click', e => {
   if (e.target.closest('button, a, select, input')) return;
   flipTo('slide');
@@ -756,10 +775,10 @@ document.addEventListener('keydown', e => {
 (function enableSwipe() {
   const el = document.querySelector('.pane-slide');
   if (!el) return;
-  let x0 = 0, y0 = 0, t0 = 0, tracking = false, swiped = false;
+  let x0 = 0, y0 = 0, t0 = 0, tracking = false;
   el.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) return;
-    tracking = true; swiped = false;
+    tracking = true;
     x0 = e.touches[0].clientX;
     y0 = e.touches[0].clientY;
     t0 = Date.now();
@@ -773,14 +792,11 @@ document.addEventListener('keydown', e => {
     const dt = Date.now() - t0;
     if (dt > 600) return;
     if (Math.abs(dx) >= 56 && Math.abs(dx) >= Math.abs(dy) * 1.2) {
-      swiped = true;
+      // Block the synthetic click that follows a swipe so we don't also flip to script.
+      suppressSlideFlipUntil = Date.now() + 450;
       go(dx < 0 ? 1 : -1);
     }
   }, { passive: true });
-  // Suppress the synthetic click after a horizontal swipe so we don't also flip views.
-  el.addEventListener('click', e => {
-    if (swiped) { e.preventDefault(); e.stopPropagation(); swiped = false; }
-  }, true);
 })();
 
 window.addEventListener('beforeunload', e => {
