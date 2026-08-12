@@ -182,6 +182,13 @@
     if (e.repeat) return;
     if (e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
     if (e.code === 'Space') { e.preventDefault(); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      return;
+    }
     if (isIgnored(e)) { e.preventDefault(); return; }
     if (isNextKey(e) || isPrevKey(e)) {
       e.preventDefault();
@@ -333,11 +340,19 @@
   function openAudience() {
     const u = new URL(location.href);
     u.searchParams.set('mode', 'audience');
-    const w = window.open(u.toString(), 'house-audience');
+    const aw = Math.max(720, Math.floor((screen.availWidth || 1280) / 2));
+    const ah = Math.max(480, screen.availHeight || 800);
+    const left = Math.max(0, (screen.availLeft || 0) + (screen.availWidth || 1280) - aw);
+    const top = screen.availTop || 0;
+    const w = window.open(
+      u.toString(),
+      'house-audience',
+      'width=' + aw + ',height=' + ah + ',left=' + left + ',top=' + top + ',menubar=no,toolbar=no,location=yes'
+    );
     const alert = $('pvAlert');
     if (!w) {
       if (alert) {
-        alert.textContent = 'Popup blocked. Allow popups, or open this URL on the projector: ' + u.toString();
+        alert.textContent = 'Popup blocked. Allow popups, or open this in another tab: ' + u.toString();
         alert.classList.remove('hidden');
       }
       return;
