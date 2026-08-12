@@ -867,6 +867,8 @@ async function openTake() {
   setModalMode(false);
   playlist = [];
   plIndex = 0;
+  const mImg = $('mSlide');
+  if (mImg) { mImg.removeAttribute('src'); mImg.alt = ''; }
   $('playback').src = playUrl;
   $('mTitle').textContent = 'Slide ' + n + ' — ' + view[i].title;
   lastFocus = document.activeElement;
@@ -1155,6 +1157,10 @@ function applySavedPipPos() {
     pip.style.bottom = 'auto';
   }
   clampPip();
+  // Re-clamp after layout/video metrics settle (first show can report 0×0).
+  requestAnimationFrame(() => requestAnimationFrame(clampPip));
+  const live = $('live');
+  if (live) live.addEventListener('loadedmetadata', clampPip, { once: true });
 }
 
 (function enablePipDrag() {
