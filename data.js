@@ -560,7 +560,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "Front Door decides what came in. Library decides what evidence we may believe. Control Room routes the work. Vault holds the credentials. The gold gate is the line between assistance and authority. Evidence Room is how we reconstruct what happened."
+     "Front Door decides what came in. Library decides what evidence we may believe. Control Room routes the work. Vault holds the credentials. The gold gate — the Approval Gate — is the line between assistance and authority. Evidence Room is how we reconstruct what happened."
     ]
    },
    {
@@ -843,7 +843,7 @@ const DECK = [
     "who": "C",
     "lines": [
      "Anyone who has run an editorial workflow knows the difference between I drafted this, and this is now the official public statement of the organization.",
-     "That distinction is not technical. It is the entire reason review exists, and every one of us has a content type where we got it wrong once."
+     "That distinction is not technical. It is the entire reason review exists, and most of us have a content type where we got it wrong once."
     ]
    },
    {
@@ -905,7 +905,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "The money was small. About eight hundred dollars. The principle is not.",
+     "The money was small. About eight hundred Canadian dollars. The principle is not.",
      "They gave a component capability, and then, when it was wrong, they tried to hand it the accountability as well. Those two do not travel together."
     ]
    },
@@ -1166,7 +1166,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "One question before we move on, and I want an actual answer. Somebody proposes a feature: the assistant drafts replies to public comments and posts them."
+     "One question before we move on, and I want an actual answer. Somebody proposes a feature: the assistant drafts replies to comments on the agency’s Facebook page, and posts them."
     ]
    },
    {
@@ -1280,7 +1280,7 @@ const DECK = [
     "t": "say",
     "who": "C",
     "lines": [
-     "For about four years the Australian government ran an automated compliance program now known as Robodebt. It took the annual income a person reported to the tax office, averaged it across the year, and compared that average to their fortnightly welfare payments. Where there was a gap, it raised a debt.",
+     "For about four years the Australian government ran an automated compliance program now known as Robodebt. It took the annual income a person reported to the tax office, averaged it across the year, and compared that average to the income they had reported, fortnight by fortnight. Where there was a gap, it raised a debt.",
      "The averaging is the flaw. People do not earn evenly. Seasonal work, casual work, stretches of unemployment. Real income is lumpy, and averaging it manufactures discrepancies that were never there.",
      "And the burden was inverted. The debt was asserted, and the individual had to disprove it, sometimes with payslips from years earlier that nobody keeps.",
      "Those debts were later found unlawful. The total bill to government is more than two billion Australian dollars."
@@ -1557,7 +1557,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "I started with a green checkmark I could not trust. And the lesson I took from it was not that systems fail."
+     "I started with a green checkmark I believed. And the lesson I took from it was not that systems fail."
     ]
    },
    {
