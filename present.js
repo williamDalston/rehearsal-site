@@ -717,6 +717,8 @@
 
   if (isPresent) {
     restore();
+    // If the talk clock is already running (mid-talk refresh), don't re-show the setup hint.
+    if (clockStart) { const st = $('pvSetup'); if (st) st.hidden = true; }
     $('pvBack').onclick = () => nav('prev');
     $('pvNext').onclick = () => nav('next');
     $('pvReset').onclick = resetNotes;
