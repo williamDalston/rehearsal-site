@@ -424,6 +424,10 @@ html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!im
 .pv-pace.ok{color:#3ec98a}
 .pv-pace.fast{color:#4b9fd8}
 .pv-pace.slow{color:#e7c473}
+.pv-cap{
+  font-weight:800;letter-spacing:.06em;color:#0d1520;background:#f0b429;
+  border-radius:8px;padding:4px 10px;font-size:13px;
+}
 .pv-hand{
   margin-top:10px;padding:10px 14px;border-radius:10px;font-weight:800;
   font-size:clamp(18px,2.2vw,28px);letter-spacing:.03em;
@@ -627,6 +631,7 @@ html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!im
       <div class="pv-meta">
         <span id="pvSlide" class="pv-slide">SLIDE 1 / 43</span>
         <span id="pvAct"></span>
+        <span id="pvCap" class="pv-cap" hidden>CAPTURE — look, don’t narrate</span>
         <span id="pvTime" class="pv-time">Elapsed 0:00 · Slot ~30 min</span>
         <span id="pvPace" class="pv-pace ok">On pace</span>
       </div>

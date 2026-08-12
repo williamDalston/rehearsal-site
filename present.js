@@ -121,6 +121,38 @@
     if (who === 'BOTH') return 'WILL + CAROLINE';
     return NAME[who] || who || '—';
   }
+  // Huge banner follows the current beat's speaker, not only the slide lead.
+  function whoNow() {
+    const beat = beatsOf(slideN)[block] || [];
+    const say = beat.find(node => node.it && node.it.t === 'say');
+    if (say) return say.it.who;
+    const s = slideOf(slideN);
+    return (s && s.who) || 'C';
+  }
+  function paintSpeaker() {
+    const who = whoNow();
+    const whoEl = $('pvWho');
+    if (whoEl) {
+      whoEl.textContent = speakerName(who);
+      whoEl.className = 'pv-who ' + who;
+    }
+    const s = slideOf(slideN);
+    const mini = $('pvMini');
+    if (mini && s) {
+      const nxt = nextSlide(slideN);
+      let t = speakerName(who) + ' · SLIDE ' + s.n + ' / ' + DECK_LEN;
+      if (nxt && nxt.who && nxt.who !== s.who && nxt.who !== 'NONE') {
+        t += ' · HANDOFF → ' + speakerName(nxt.who);
+      }
+      mini.textContent = t;
+    }
+  }
+  function warmSlides() {
+    DECK.forEach(s => {
+      const img = new Image();
+      img.src = 'slides/' + String(s.n).padStart(2, '0') + '.jpg';
+    });
+  }
 
   function elapsedSecs() {
     if (!clockStart) return 0;
@@ -351,6 +383,7 @@
       onRows[0].classList.add('on-first');
       onRows[onRows.length - 1].classList.add('on-last');
     }
+    paintSpeaker();
     paintWordHint();
     scrollBlockToRead(onRows[0] || null);
   }
@@ -393,12 +426,12 @@
     block = Math.max(0, Math.min(beatCount(s.n) - 1, block));
 
     const who = s.who || 'C';
-    const whoEl = $('pvWho');
-    whoEl.textContent = speakerName(who);
-    whoEl.className = 'pv-who ' + who;
+    paintSpeaker();
 
     $('pvSlide').textContent = 'SLIDE ' + s.n + ' / ' + DECK_LEN;
     $('pvAct').textContent = s.act || '';
+    const cap = $('pvCap');
+    if (cap) cap.hidden = !s.capture;
 
     // Orientation only: mirror the audience slide. Non-interactive.
     const thumb = $('pvSlideImg');
@@ -421,15 +454,6 @@
     const nextBox = $('pvNextBeat');
     if (!nxt) nextBox.textContent = 'End of deck';
     else nextBox.textContent = speakerName(nxt.who) + ' · “' + firstSay(nxt) + '”';
-
-    const mini = $('pvMini');
-    if (mini) {
-      let t = speakerName(who) + ' · SLIDE ' + s.n + ' / ' + DECK_LEN;
-      if (nxt && nxt.who && nxt.who !== who && nxt.who !== 'NONE') {
-        t += ' · HANDOFF → ' + speakerName(nxt.who);
-      }
-      mini.textContent = t;
-    }
 
     const box = $('pvScript');
     box.innerHTML = '';
@@ -769,18 +793,16 @@
     };
     setInterval(tickClock, 1000);
     renderPresent();
+    warmSlides();
     broadcastState();
+    window.addEventListener('pageshow', () => broadcastState({ force: true }));
     window.addEventListener('beforeunload', e => {
       e.preventDefault();
       e.returnValue = '';
     });
   } else {
-    let hadStore = false;
-    try { hadStore = !!sessionStorage.getItem(STORE); } catch (e) { /* ignore */ }
-    if (hadStore) {
-      restore();
-      renderAudience();
-    }
+    try { if (sessionStorage.getItem(STORE)) restore(); } catch (e) { /* ignore */ }
+    renderAudience();
     function requestState() {
       const t = Date.now();
       post({ type: 'request-state', t: t });
