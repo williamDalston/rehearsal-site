@@ -390,7 +390,17 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
   background:#0b64a8;color:#fff;border:0;border-radius:10px;cursor:pointer;
   padding:12px 18px;font:700 15px/1.25 "Segoe UI",sans-serif;white-space:nowrap;
 }
-html:fullscreen .aud-full,html:-webkit-full-screen .aud-full{display:none!important}
+.aud-chrome{
+  position:fixed;top:0;left:0;right:0;z-index:7;display:flex;gap:8px;align-items:center;
+  padding:10px 12px;background:linear-gradient(180deg,rgba(0,0,0,.72),transparent);
+}
+.aud-chrome button{
+  background:#141e2b;color:#e8eef4;border:1px solid #4b9fd8;border-radius:8px;cursor:pointer;
+  padding:10px 14px;font:700 14px/1.2 "Segoe UI",sans-serif;
+}
+.aud-chrome .go{background:#0b64a8;border-color:#4b9fd8;color:#fff}
+html:fullscreen .aud-full,html:-webkit-full-screen .aud-full,
+html:fullscreen .aud-chrome,html:-webkit-full-screen .aud-chrome{display:none!important}
 
 .pv{display:flex;flex-direction:column;height:100%;min-height:0;background:#0d1520;color:#e8eef4;
   font:18px/1.35 "Segoe UI",ui-sans-serif,system-ui,sans-serif}
@@ -644,8 +654,11 @@ html:fullscreen .aud-full,html:-webkit-full-screen .aud-full{display:none!import
 </div>
 
 <div id="audienceApp">
+  <div class="aud-chrome">
+    <button type="button" id="audBack">← Back to Presenter</button>
+    <button type="button" id="audFull" class="go">Fullscreen (F)</button>
+  </div>
   <div class="aud-wrap"><img id="audImg" alt="" draggable="false"></div>
-  <button type="button" id="audFull" class="aud-full">Fullscreen (F or F8) · Esc to exit</button>
 </div>
 
 <script src="data.js"></script>

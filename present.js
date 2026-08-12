@@ -196,9 +196,9 @@
       }
       return;
     }
-    if (e.key === 'f' || e.key === 'F' || e.key === 'F8') {
+    if (isAudience && (e.key === 'f' || e.key === 'F' || e.key === 'F8')) {
       e.preventDefault();
-      if (isAudience) toggleFullscreen();
+      toggleFullscreen();
       return;
     }
     if (isIgnored(e)) { e.preventDefault(); return; }
@@ -740,7 +740,23 @@
     if (fullBtn) fullBtn.onclick = () => toggleFullscreen();
     const wrap = document.querySelector('.aud-wrap');
     if (wrap) wrap.addEventListener('dblclick', () => toggleFullscreen());
+    let allowClose = false;
+    function leaveAudience() {
+      allowClose = true;
+      const u = new URL(location.href);
+      u.searchParams.set('mode', 'present');
+      if (window.opener && !window.opener.closed) {
+        try { window.opener.focus(); } catch (e) { /* ignore */ }
+        window.close();
+        setTimeout(() => { if (!window.closed) location.href = u.toString(); }, 200);
+        return;
+      }
+      location.href = u.toString();
+    }
+    const backBtn = $('audBack');
+    if (backBtn) backBtn.onclick = leaveAudience;
     window.addEventListener('beforeunload', e => {
+      if (allowClose) return;
       e.preventDefault();
       e.returnValue = '';
     });
