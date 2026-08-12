@@ -23,6 +23,7 @@
   let line = 0;
   let rev = 0;
   let lastRev = -1;
+  let lastAppliedT = -1;
   let clockStart = null;
   let rec = null;
   let voiceOn = false;
@@ -33,7 +34,7 @@
 
   function onChannelMessage(ev) {
     const msg = ev.data || {};
-    if ((msg.type === 'hello' || msg.type === 'request-state') && isPresent) broadcastState();
+    if ((msg.type === 'hello' || msg.type === 'request-state') && isPresent) broadcastState({ force: true });
     else if (msg.type === 'nav' && isPresent) {
       if (msg.direction === 'next' || msg.direction === 'prev') nav(msg.direction);
     } else if (msg.type === 'state') applyState(msg);
@@ -117,15 +118,21 @@
     if (!ch) return;
     try { ch.postMessage(msg); } catch (e) { /* ignore */ }
   }
-  function broadcastState() {
+  function broadcastState(opts) {
     rev += 1;
     persist();
-    post({ type: 'state', slide: slideN, line: line, rev: rev, t: Date.now() });
+    post({ type: 'state', slide: slideN, line: line, rev: rev, t: Date.now(), force: !!(opts && opts.force) });
   }
 
   function applyState(msg) {
     if (!msg || typeof msg.slide !== 'number') return;
-    if (typeof msg.rev === 'number' && msg.rev < lastRev) return;
+    // Order by wall-clock t. Presenter and audience are two windows on ONE machine, so
+    // Date.now() is a shared clock that never resets when a tab restarts — unlike the
+    // per-window rev counter, which could blackhole a refreshed audience (or even a
+    // Resync) after the presenter window is reopened. A forced reply always applies.
+    const t = typeof msg.t === 'number' ? msg.t : 0;
+    if (!msg.force && t && t < lastAppliedT) return;
+    if (t) lastAppliedT = Math.max(lastAppliedT, t);
     if (typeof msg.rev === 'number') lastRev = msg.rev;
     const n = DECK.some(s => s.n === msg.slide) ? msg.slide : DECK[0].n;
     const rows = rowsFor(n);
@@ -141,7 +148,11 @@
 
   function gotoSlide(n, { fromNav } = {}) {
     if (!DECK.some(s => s.n === n)) return;
-    if (fromNav && n !== slideN) ensureClock();
+    if (fromNav && n !== slideN) {
+      ensureClock();
+      const setup = $('pvSetup');
+      if (setup) setup.hidden = true;
+    }
     slideN = n;
     line = 0;
     if (isPresent) {
@@ -199,6 +210,10 @@
       el.classList.toggle('on', idx === line);
       el.classList.toggle('past', idx < line);
     });
+    if (line === 0) {
+      box.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+      return;
+    }
     const on = box.querySelector('.pv-row.on');
     if (on) on.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
   }
@@ -318,9 +333,22 @@
   function openAudience() {
     const u = new URL(location.href);
     u.searchParams.set('mode', 'audience');
-    window.open(u.toString(), 'house-audience');
-    setTimeout(broadcastState, 250);
-    setTimeout(broadcastState, 1000);
+    const w = window.open(u.toString(), 'house-audience');
+    const alert = $('pvAlert');
+    if (!w) {
+      if (alert) {
+        alert.textContent = 'Popup blocked. Allow popups, or open this URL on the projector: ' + u.toString();
+        alert.classList.remove('hidden');
+      }
+      return;
+    }
+    if (alert) {
+      alert.textContent = '';
+      alert.classList.add('hidden');
+    }
+    try { w.focus(); } catch (e) { /* ignore */ }
+    setTimeout(() => broadcastState({ force: true }), 250);
+    setTimeout(() => broadcastState({ force: true }), 1000);
   }
 
   /* ---------- optional speech follow (never changes slides) ---------- */
@@ -396,7 +424,7 @@
     $('pvBack').onclick = () => nav('prev');
     $('pvNext').onclick = () => nav('next');
     $('pvReset').onclick = resetNotes;
-    $('pvResync').onclick = () => broadcastState();
+    $('pvResync').onclick = () => broadcastState({ force: true });
     $('pvOpenAud').onclick = openAudience;
     if (!speechAvailable()) {
       $('pvVoice').disabled = true;
@@ -411,6 +439,10 @@
     setInterval(tickClock, 1000);
     renderPresent({ keepLine: true });
     broadcastState();
+    window.addEventListener('beforeunload', e => {
+      e.preventDefault();
+      e.returnValue = '';
+    });
   } else {
     let hadStore = false;
     try { hadStore = !!sessionStorage.getItem(STORE); } catch (e) { /* ignore */ }
@@ -428,5 +460,19 @@
     setTimeout(requestState, 50);
     setTimeout(requestState, 250);
     setTimeout(requestState, 1000);
+    window.addEventListener('beforeunload', e => {
+      e.preventDefault();
+      e.returnValue = '';
+    });
+    let hideCursor = null;
+    const idle = () => {
+      document.documentElement.classList.add('aud-idle');
+    };
+    document.addEventListener('mousemove', () => {
+      document.documentElement.classList.remove('aud-idle');
+      clearTimeout(hideCursor);
+      hideCursor = setTimeout(idle, 2000);
+    });
+    hideCursor = setTimeout(idle, 2000);
   }
 })();

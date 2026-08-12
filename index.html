@@ -70,6 +70,9 @@ header{
 }
 .ctl:hover{border-color:#3c5470;color:var(--ink)}
 .ctl.on{border-color:var(--gold);color:var(--gold);background:rgba(240,180,41,.09)}
+a.ctl{text-decoration:none;color:inherit}
+.ctl.go{background:#0b64a8;border-color:#4b9fd8;color:#fff;font-weight:700}
+.ctl.go:hover{color:#fff;border-color:#7ec8ff}
 select.ctl{
   -webkit-appearance:none;appearance:none;padding-right:28px;max-width:min(220px,42vw);
   background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),linear-gradient(135deg,var(--dim) 50%,transparent 50%);
@@ -378,6 +381,7 @@ html.mode-audience #modal{display:none!important}
 html.mode-present #presentApp{display:flex!important;flex-direction:column;height:100%;min-height:0}
 html.mode-audience #audienceApp{display:flex!important;height:100%;background:#000}
 html.mode-audience,html.mode-audience body{background:#000;overflow:hidden}
+html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
 
 .aud-wrap{flex:1;display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none}
 .aud-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;pointer-events:none}
@@ -407,10 +411,14 @@ html.mode-audience,html.mode-audience body{background:#000;overflow:hidden}
   background:#1b2836;border:2px solid #f0b429;color:#f0b429;
 }
 .pv-hand .nextline{display:block;font-weight:600;font-size:clamp(16px,1.6vw,22px);color:#e8eef4;margin-top:4px;letter-spacing:0}
+.pv-setup{flex:none;padding:8px 18px;font-size:14px;color:#93a5b8;background:#141e2b;border-bottom:1px solid #2a3a4d}
+.pv-setup b{color:#e8eef4}
+.pv-alert{flex:none;margin:0;padding:8px 18px;border-radius:0;border-left:none;border-right:none}
 .pv-bar{flex:none;display:flex;flex-wrap:wrap;gap:8px;padding:10px 18px;border-bottom:1px solid #2a3a4d;background:#141e2b}
 .pv-bar .ctl{min-height:44px;padding:8px 16px;font-size:15px;font-weight:700}
 .pv-bar .go{background:#0b64a8;border-color:#4b9fd8;color:#fff}
 .pv-bar .panic{border-color:#f0b429;color:#f0b429}
+.pv-keys{color:#93a5b8;font-size:13px;font-weight:600;align-self:center}
 .pv-script{
   flex:1;min-height:0;overflow-y:auto;padding:16px 22px 28px;
   -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
@@ -437,7 +445,7 @@ html.mode-audience,html.mode-audience body{background:#000;overflow:hidden}
   font-size:clamp(16px,1.6vw,22px);
 }
 .pv-next b{display:block;font-size:12px;letter-spacing:.12em;color:#93a5b8;margin-bottom:4px}
-.pv-voice{margin-left:auto;display:flex;align-items:center;gap:8px;color:#93a5b8;font-size:14px;font-weight:600}
+.pv-voice{margin-left:auto;display:flex;align-items:center;gap:8px;color:#64788d;font-size:13px;font-weight:600}
 .pv-voice.on{color:#3ec98a}
 .pv-voice input{width:18px;height:18px;accent-color:#3ec98a}
 </style>
@@ -463,6 +471,7 @@ html.mode-audience,html.mode-audience body{background:#000;overflow:hidden}
       <button id="camBtn" class="ctl" title="Turn camera on" aria-pressed="false">Camera</button>
       <button id="copyScript" class="ctl" title="Copy the full script (with your edits)">Copy script</button>
       <button id="exportScript" class="ctl" title="Download the full script as a text file">Export</button>
+      <a id="presentBtn" class="ctl go" href="?mode=present" title="Show-day presenter: full script, clicker, audience window">Present</a>
     </div>
   </header>
 
@@ -577,13 +586,18 @@ html.mode-audience,html.mode-audience body{background:#000;overflow:hidden}
     </div>
     <div id="pvHand" class="pv-hand" hidden></div>
   </div>
+  <div id="pvSetup" class="pv-setup">
+    <b>Show setup:</b> Open Audience View → drag that window to HDMI → F11. Run the talk with the clicker. Leave Follow My Voice off.
+  </div>
+  <div id="pvAlert" class="err pv-alert hidden" role="alert"></div>
   <div class="pv-bar">
-    <button type="button" id="pvBack" class="ctl">◀ Back</button>
-    <button type="button" id="pvNext" class="ctl go">Next ▶</button>
+    <button type="button" id="pvOpenAud" class="ctl go" title="Opens the projector window. Drag it to HDMI, then press F11.">Open Audience View</button>
+    <button type="button" id="pvBack" class="ctl" title="Previous slide (← or Page Up)">◀ Back</button>
+    <button type="button" id="pvNext" class="ctl" title="Next slide (→ or Page Down)">Next ▶</button>
     <button type="button" id="pvReset" class="ctl panic" title="Keep this slide. Restart the notes.">Reset Notes</button>
-    <button type="button" id="pvResync" class="ctl" title="Push this slide to the projector">Resync Displays</button>
-    <button type="button" id="pvOpenAud" class="ctl go">Open Audience View</button>
-    <label class="pv-voice" id="pvVoiceLab"><input type="checkbox" id="pvVoice"> Follow My Voice</label>
+    <button type="button" id="pvResync" class="ctl" title="Emergency: push this slide to the projector">Resync Displays</button>
+    <span class="pv-keys">Clicker: ← → or Page Up/Down</span>
+    <label class="pv-voice" id="pvVoiceLab" title="Optional. Off for the talk. Never changes slides."><input type="checkbox" id="pvVoice"> Follow My Voice</label>
   </div>
   <div id="pvScript" class="pv-script"></div>
   <div class="pv-next">
