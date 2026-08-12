@@ -472,6 +472,165 @@ function resetScript() {
   render();
 }
 
+/* ---------------- script export / copy ---------------- */
+function formatItemPlain(it) {
+  if (it.t === 'say') {
+    const who = NAME[it.who] || it.who;
+    return who + '\n' + it.lines.map(L => L).join('\n');
+  }
+  if (it.t === 'do') return '▸ ' + it.text;
+  if (it.t === 'cut') return 'CUT IF LONG — ' + it.text;
+  return '(' + it.text + ')';
+}
+
+function formatSlidePlain(s) {
+  const bits = [];
+  bits.push('─'.repeat(56));
+  bits.push('SLIDE ' + s.n + ' · ' + s.title);
+  const meta = [
+    NAME[s.who] || s.who,
+    s.len,
+    s.run && s.run !== '—' ? 'run ' + s.run : '',
+    s.act || '',
+    s.capture ? 'CAPTURE' : '',
+    slideIsEdited(s.n) ? 'edited' : ''
+  ].filter(Boolean).join(' · ');
+  bits.push(meta);
+  bits.push('─'.repeat(56));
+  for (const it of itemsFor(s.n)) bits.push(formatItemPlain(it), '');
+  return bits.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+function formatDeckPlain(slides) {
+  const head = [
+    'The House That AI Built — rehearsal script',
+    'Drupal GovCon 2026',
+    'Exported ' + new Date().toISOString().slice(0, 10),
+    slides.length + ' slides' + (Object.keys(scriptEdits).length ? ' (includes local edits)' : ''),
+    ''
+  ].join('\n');
+  return head + '\n' + slides.map(formatSlidePlain).join('\n');
+}
+
+function formatItemMd(it) {
+  if (it.t === 'say') {
+    return '**' + (NAME[it.who] || it.who) + '**\n\n' + it.lines.map(L => L).join('\n\n');
+  }
+  if (it.t === 'do') return '> ▸ *' + it.text + '*';
+  if (it.t === 'cut') return '> **CUT IF LONG** — ' + it.text;
+  return '> ' + it.text;
+}
+
+function formatSlideMd(s) {
+  const bits = [];
+  bits.push('## Slide ' + s.n + ' — ' + s.title);
+  bits.push('');
+  bits.push('*' + [
+    NAME[s.who] || s.who,
+    s.len,
+    s.act || '',
+    s.capture ? 'CAPTURE' : ''
+  ].filter(Boolean).join(' · ') + '*');
+  bits.push('');
+  for (const it of itemsFor(s.n)) {
+    bits.push(formatItemMd(it));
+    bits.push('');
+  }
+  return bits.join('\n');
+}
+
+function formatDeckMd(slides) {
+  return [
+    '# The House That AI Built — rehearsal script',
+    '',
+    'Drupal GovCon 2026 · exported ' + new Date().toISOString().slice(0, 10),
+    '',
+    slides.length + ' slides' + (Object.keys(scriptEdits).length ? ' (includes local edits)' : ''),
+    '',
+    '---',
+    '',
+    slides.map(formatSlideMd).join('\n---\n\n')
+  ].join('\n');
+}
+
+function exportSlides() {
+  // Prefer the current filtered view; fall back to the full deck.
+  const slides = (view && view.length) ? view.slice() : DECK.slice();
+  // Keep talk order even if the view is shuffled.
+  slides.sort((a, b) => a.n - b.n);
+  return slides;
+}
+
+async function copyText(text, btn, okLabel) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+  } catch (e) {
+    showErr('Could not copy to the clipboard in this browser.');
+    return false;
+  }
+  if (btn) {
+    const prev = btn.textContent;
+    btn.textContent = okLabel || 'Copied';
+    btn.classList.add('on');
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.classList.remove('on');
+    }, 1400);
+  }
+  return true;
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+async function copyAllScript() {
+  persistScriptFromDom();
+  const slides = exportSlides();
+  await copyText(formatDeckPlain(slides), $('copyScript'), 'Copied');
+}
+
+async function copySlideScript() {
+  if (!view.length) return;
+  persistScriptFromDom();
+  await copyText(formatSlidePlain(view[i]), $('copySlide'), 'Copied');
+}
+
+function exportAllScript(e) {
+  persistScriptFromDom();
+  const slides = exportSlides();
+  const plain = e && e.shiftKey;
+  if (plain) downloadText('house-that-ai-built-script.txt', formatDeckPlain(slides));
+  else downloadText('house-that-ai-built-script.md', formatDeckMd(slides));
+  const btn = $('exportScript');
+  const prev = btn.textContent;
+  btn.textContent = plain ? 'Saved .txt' : 'Saved .md';
+  btn.classList.add('on');
+  setTimeout(() => {
+    btn.textContent = prev;
+    btn.classList.remove('on');
+  }, 1400);
+}
+
 function render() {
   if (!view.length) {
     $('sNum').textContent = '—';
@@ -822,6 +981,10 @@ $('jump').onchange = e => {
   i = +e.target.value; render();
 };
 $('resetScript').onclick = resetScript;
+$('copySlide').onclick = copySlideScript;
+$('copyScript').onclick = copyAllScript;
+$('exportScript').onclick = exportAllScript;
+$('exportScript').title = 'Download the full script (.md). Shift-click for plain .txt';
 $('script').addEventListener('input', scheduleScriptSave);
 $('script').addEventListener('blur', persistScriptFromDom, true);
 $('flagBtn').onclick = () => {
