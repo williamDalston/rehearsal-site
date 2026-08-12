@@ -242,18 +242,17 @@
   function scrollToCurrent(force) {
     const box = $('pvScript');
     if (!box) return;
-    if (wordPos <= 0 && line === 0) {
-      box.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    const el = (scriptWords[wordPos] && scriptWords[wordPos].el) || box.querySelector('.pv-row.on');
+    if (!el) {
+      if (wordPos <= 0) box.scrollTop = 0;
       return;
     }
-    const el = (scriptWords[wordPos] && scriptWords[wordPos].el) || box.querySelector('.pv-row.on');
-    if (!el) return;
-    const er = el.getBoundingClientRect();
     const br = box.getBoundingClientRect();
-    const lo = br.top + br.height * 0.18;
-    const hi = br.top + br.height * 0.62;
-    if (force || er.top < lo || er.bottom > hi) {
-      el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+    const er = el.getBoundingClientRect();
+    const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.28);
+    const next = Math.max(0, Math.round(y));
+    if (force || Math.abs(box.scrollTop - next) > 24) {
+      box.scrollTo({ top: next, behavior: reduceMotion ? 'auto' : 'smooth' });
     }
   }
 
@@ -495,40 +494,62 @@
     return miss + (x.length - i) + (y.length - j) <= 1;
   }
 
+  function uniqueIndex(word, from) {
+    let hit = -1;
+    for (let i = from; i < scriptWords.length; i++) {
+      if (!closeWord(word, scriptWords[i].norm)) continue;
+      if (hit >= 0) return -1;
+      hit = i;
+    }
+    return hit;
+  }
+
   function followTranscript(text) {
     if (!scriptWords.length) return;
     const heard = tokens(text);
     if (heard.length < 1) return;
-    const tail = heard.slice(-14);
+    const tail = heard.slice(-16);
     const from = wordPos;
-    const lo = Math.max(0, from - 6);
-    const hi = Math.min(scriptWords.length, from + 48);
-    let bestN = 0, bestPos = from;
+    let cursor = Math.max(0, from - 4);
+    let lastHit = -1;
+    let hits = 0;
 
-    for (let o = 0; o < tail.length; o++) {
-      const seq = tail.slice(o);
-      if (!seq.length) continue;
-      for (let i = lo; i < hi; i++) {
-        let n = 0;
-        while (n < seq.length && i + n < scriptWords.length && closeWord(seq[n], scriptWords[i + n].norm)) n++;
-        const enough = n >= 2 || (n === 1 && seq[0].length >= 4);
-        if (!enough) continue;
-        const pos = Math.min(scriptWords.length - 1, i + n - 1);
-        if (n > bestN || (n === bestN && Math.abs(pos - from) < Math.abs(bestPos - from))) {
-          bestN = n;
-          bestPos = pos;
-        }
+    for (let t = 0; t < tail.length; t++) {
+      const w = tail[t];
+      let found = -1;
+      const near = Math.min(scriptWords.length, cursor + 12);
+      for (let j = cursor; j < near; j++) {
+        if (closeWord(w, scriptWords[j].norm)) { found = j; break; }
+      }
+      if (found < 0 && w.length >= 5) {
+        const uniq = uniqueIndex(w, Math.max(0, from - 2));
+        if (uniq >= 0) found = uniq;
+      }
+      if (found < 0) continue;
+      hits++;
+      lastHit = found;
+      cursor = found + 1;
+    }
+
+    if (lastHit < 0 && tail.length) {
+      const last = tail[tail.length - 1];
+      if (last.length >= 5) {
+        const uniq = uniqueIndex(last, from);
+        if (uniq >= 0) { lastHit = uniq; hits = 1; }
       }
     }
-    if (bestN < 1) return;
-    if (bestPos < from - 8) return;
-    if (bestPos > from + 24 && bestN < 3) return;
-    if (bestPos === wordPos) return;
-    wordPos = bestPos;
+
+    if (lastHit < 0 || hits < 1) return;
+    if (lastHit < from - 6) return;
+    if (lastHit === wordPos) {
+      scrollToCurrent(true);
+      return;
+    }
+    wordPos = lastHit;
     line = scriptWords[wordPos].line;
     persist();
     paintWords();
-    scrollToCurrent(false);
+    scrollToCurrent(true);
   }
   function speechAvailable() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);

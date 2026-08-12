@@ -2,7 +2,7 @@
    App shell is network-first (so edits show as soon as you're online), slides and
    the icon are cache-first (fast, and available offline once viewed). Bump VERSION
    to force every client to drop the old cache. */
-const VERSION = 'v14';
+const VERSION = 'v15';
 const CACHE = 'rehearsal-' + VERSION;
 const SHELL = ['./', './index.html', './app.js', './data.js', './present.js', './manifest.webmanifest', './icon.svg'];
 
