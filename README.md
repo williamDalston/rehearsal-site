@@ -79,9 +79,9 @@ remembers where you left it. Works with a mouse or a finger.
 
 **Play all** runs every recorded take back-to-back in **slide order** (1 → 43; unrecorded
 slides are skipped). During a run the matching slide sits **beside the video**. Use the speed
-menu (0.5×–2×) to listen faster or slower; `←` / `→` skip takes. **Download run** saves the
-whole playback as one video (it encodes in real time — keep the tab open). If the browser
-can't stitch a single file, you get a zip of the takes in order instead.
+menu (0.5×–2×) to listen faster or slower; `←` / `→` skip takes. **Download run** saves one
+video with the **slide on the left and your take on the right** (encodes in real time — keep
+the tab open). If the browser can't stitch that file, you get a zip of the takes in order.
 
 **Timing is baked in.** Each slide carries a target length (the `len` field). While you
 record, the timer turns amber the moment you run past that target. After you stop, the take

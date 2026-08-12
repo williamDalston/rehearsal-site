@@ -803,7 +803,7 @@ function setModalMode(run) {
     : '';
   $('mDl').textContent = run ? 'Download run' : 'Download';
   $('mDl').title = run
-    ? 'Save the full run as one video (plays through in real time)'
+    ? 'Save the full run as one video: slide on the left, you on the right'
     : 'Download this take';
 }
 
@@ -1053,57 +1053,133 @@ function waitEvent(el, name) {
   });
 }
 
+function drawContain(ctx, src, dx, dy, dw, dh) {
+  const sw = src.videoWidth || src.naturalWidth || 0;
+  const sh = src.videoHeight || src.naturalHeight || 0;
+  if (!sw || !sh) return;
+  const scale = Math.min(dw / sw, dh / sh);
+  const w = sw * scale, h = sh * scale;
+  ctx.drawImage(src, dx + (dw - w) / 2, dy + (dh - h) / 2, w, h);
+}
+
+function loadSlideImage(n) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = 'slides/' + String(n).padStart(2, '0') + '.jpg';
+  });
+}
+
 async function stitchRun(items) {
+  const W = 1920, H = 1080, half = W / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx || typeof canvas.captureStream !== 'function') throw new Error('no-capture');
+
   const src = document.createElement('video');
   src.playsInline = true;
   src.muted = false;
-  src.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;';
+  src.crossOrigin = 'anonymous';
+  src.style.cssText = 'position:fixed;left:-9999px;top:0;width:4px;height:4px;opacity:0;pointer-events:none;';
   document.body.appendChild(src);
 
-  if (typeof src.captureStream !== 'function' && typeof src.mozCaptureStream !== 'function') {
-    src.remove();
-    throw new Error('no-capture');
-  }
-
-  const sizeToNative = () => {
-    if (src.videoWidth) {
-      src.style.width = src.videoWidth + 'px';
-      src.style.height = src.videoHeight + 'px';
+  let slideImg = null;
+  let painting = true;
+  const paint = () => {
+    ctx.fillStyle = '#0a1119';
+    ctx.fillRect(0, 0, W, H);
+    if (slideImg) drawContain(ctx, slideImg, 0, 0, half, H);
+    else {
+      ctx.fillStyle = '#64788d';
+      ctx.font = '32px system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Slide', half / 2, H / 2);
     }
+    if (src.readyState >= 2) drawContain(ctx, src, half, 0, half, H);
+    ctx.fillStyle = '#2a3a4d';
+    ctx.fillRect(half - 1, 0, 2, H);
   };
+  const loop = () => {
+    if (!painting) return;
+    paint();
+    requestAnimationFrame(loop);
+  };
+  loop();
 
   const first = await getTake(items[0].n);
-  if (!first) { src.remove(); throw new Error('empty'); }
+  if (!first) { painting = false; src.remove(); throw new Error('empty'); }
   src.src = URL.createObjectURL(first);
   await waitEvent(src, 'loadedmetadata');
-  sizeToNative();
+  slideImg = await loadSlideImage(items[0].n);
+  paint();
 
-  const cap = src.captureStream ? src.captureStream() : src.mozCaptureStream();
+  let mixed;
+  let audioCtx = null;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    const dest = audioCtx.createMediaStreamDestination();
+    const node = audioCtx.createMediaElementSource(src);
+    node.connect(dest);
+    mixed = new MediaStream([
+      ...canvas.captureStream(30).getVideoTracks(),
+      ...dest.stream.getAudioTracks()
+    ]);
+  } catch (e) {
+    const cap = src.captureStream ? src.captureStream() : (src.mozCaptureStream && src.mozCaptureStream());
+    mixed = new MediaStream([
+      ...canvas.captureStream(30).getVideoTracks(),
+      ...(cap ? cap.getAudioTracks() : [])
+    ]);
+  }
+
   const mt = pickMime();
   let rec;
-  try { rec = new MediaRecorder(cap, mt ? { mimeType: mt } : undefined); }
-  catch (e) { src.remove(); throw e; }
+  try { rec = new MediaRecorder(mixed, mt ? { mimeType: mt } : undefined); }
+  catch (e) {
+    painting = false;
+    src.remove();
+    if (audioCtx) audioCtx.close().catch(() => {});
+    throw e;
+  }
 
   const chunks = [];
   rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   rec.start(400);
 
-  for (let i = 0; i < items.length; i++) {
-    if (encodeAbort) break;
-    $('mDl').textContent = 'Saving ' + (i + 1) + '/' + items.length;
-    if (i > 0) {
-      const blob = await getTake(items[i].n);
-      if (!blob) continue;
-      const prev = src.src;
-      src.src = URL.createObjectURL(blob);
-      URL.revokeObjectURL(prev);
-      await waitEvent(src, 'loadedmetadata');
-      sizeToNative();
+  const cleanup = () => {
+    painting = false;
+    mixed.getTracks().forEach(t => t.stop());
+    URL.revokeObjectURL(src.src);
+    src.remove();
+    if (audioCtx) audioCtx.close().catch(() => {});
+  };
+
+  try {
+    for (let i = 0; i < items.length; i++) {
+      if (encodeAbort) break;
+      $('mDl').textContent = 'Saving ' + (i + 1) + '/' + items.length;
+      if (i > 0) {
+        const blob = await getTake(items[i].n);
+        if (!blob) continue;
+        const prev = src.src;
+        src.src = URL.createObjectURL(blob);
+        URL.revokeObjectURL(prev);
+        await waitEvent(src, 'loadedmetadata');
+        slideImg = await loadSlideImage(items[i].n);
+      }
+      src.playbackRate = 1;
+      try { await src.play(); }
+      catch (e) { rec.stop(); cleanup(); throw e; }
+      await waitEvent(src, 'ended');
     }
-    src.playbackRate = 1;
-    try { await src.play(); }
-    catch (e) { src.remove(); rec.stop(); throw e; }
-    await waitEvent(src, 'ended');
+  } catch (e) {
+    try { rec.stop(); } catch (e2) { /* ignore */ }
+    cleanup();
+    throw e;
   }
 
   const out = await new Promise((res, rej) => {
@@ -1111,8 +1187,7 @@ async function stitchRun(items) {
     rec.onerror = () => rej(new Error('recorder'));
     try { rec.stop(); } catch (e) { rej(e); }
   });
-  URL.revokeObjectURL(src.src);
-  src.remove();
+  cleanup();
   if (encodeAbort || !out.size) throw new Error('aborted');
   return out;
 }
