@@ -277,7 +277,7 @@ function startRec() {
     try {
       await putTake(slideN, blob);
       haveTake.add(slideN);
-      takeMeta[slideN] = { d: Math.round(recElapsedMs / 1000) };
+      takeMeta[slideN] = { d: Math.round(recElapsedMs / 1000), at: Date.now() };
       saveTakeMeta();
       hideErr();
     } catch (e) {
@@ -335,6 +335,11 @@ function stopRec() {
 /* ---------------- rendering ---------------- */
 function updateRecCount() {
   $('recCount').textContent = haveTake.size + ' / ' + DECK_LEN;
+  const btn = $('playAll');
+  if (btn) {
+    btn.hidden = haveTake.size === 0;
+    btn.textContent = haveTake.size ? ('▶ Play all (' + haveTake.size + ')') : '▶ Play all';
+  }
 }
 
 // One-line readout for a saved take: actual length vs the slide's target.
@@ -590,16 +595,113 @@ function shuffle(a) { for (let k = a.length - 1; k > 0; k--) { const j = Math.ra
 
 /* ---------------- playback ---------------- */
 let playUrl = null;
+let preloadUrl = null;
 let lastFocus = null;         // restored when the playback dialog closes
+let playlist = [];            // [{ n, title, at }]
+let plIndex = 0;
+let plMode = false;           // continuous run vs single-take watch
+let plAdvance = true;         // auto-advance on ended
+
+function revokePlayUrl() {
+  if (playUrl) { URL.revokeObjectURL(playUrl); playUrl = null; }
+}
+function revokePreload() {
+  if (preloadUrl) { URL.revokeObjectURL(preloadUrl); preloadUrl = null; }
+}
+
+/** Recorded takes in the order they were captured (fallback: talk order for older takes). */
+function buildPlaylist() {
+  return DECK
+    .filter(s => haveTake.has(s.n))
+    .map(s => ({
+      n: s.n,
+      title: s.title,
+      at: (takeMeta[s.n] && typeof takeMeta[s.n].at === 'number') ? takeMeta[s.n].at : s.n
+    }))
+    .sort((a, b) => a.at - b.at || a.n - b.n);
+}
+
+function setModalMode(run) {
+  plMode = run;
+  $('modal').classList.toggle('run', run);
+  $('mPos').hidden = !run;
+  $('mSub').textContent = run
+    ? 'Recording order · plays straight through'
+    : '';
+}
+
+async function preloadPlaylistItem(idx) {
+  revokePreload();
+  if (!plMode || idx < 0 || idx >= playlist.length) return;
+  try {
+    const blob = await getTake(playlist[idx].n);
+    if (blob) preloadUrl = URL.createObjectURL(blob);
+  } catch (e) { /* preload is best-effort */ }
+}
+
+async function loadPlaylistItem(idx, { autoplay = true } = {}) {
+  if (idx < 0 || idx >= playlist.length) return;
+  plIndex = idx;
+  const item = playlist[idx];
+  let blob;
+  try { blob = await getTake(item.n); }
+  catch (e) { showErr('Could not open take for slide ' + item.n + '.'); return; }
+  if (!blob) {
+    // Skip missing blob and keep going in a run.
+    if (plMode && plAdvance) return playRunStep(1);
+    return;
+  }
+
+  const v = $('playback');
+  // Prefer a preloaded URL for the seamless handoff.
+  let url = null;
+  if (preloadUrl) {
+    url = preloadUrl;
+    preloadUrl = null;
+  } else {
+    revokePlayUrl();
+    url = URL.createObjectURL(blob);
+  }
+  // If we created a fresh URL, drop any old playUrl first.
+  if (playUrl && playUrl !== url) revokePlayUrl();
+  playUrl = url;
+
+  v.src = playUrl;
+  $('mTitle').textContent = 'Slide ' + item.n + ' — ' + item.title;
+  $('mPos').textContent = (idx + 1) + ' / ' + playlist.length;
+  $('mPrev').disabled = idx <= 0;
+  $('mNext').disabled = idx >= playlist.length - 1;
+
+  if (autoplay) {
+    try { await v.play(); }
+    catch (e) { /* user gesture / autoplay policy — controls still work */ }
+  }
+  preloadPlaylistItem(idx + 1);
+}
+
+async function playRunStep(delta) {
+  const next = plIndex + delta;
+  if (next < 0 || next >= playlist.length) {
+    if (delta > 0) closeTake(); // finished the run
+    return;
+  }
+  await loadPlaylistItem(next);
+}
+
 async function openTake() {
   if (!view.length) return;
+  if (recording) stopRec();
   const n = view[i].n;
   let blob;
   try { blob = await getTake(n); }
   catch (e) { showErr('Could not open that take.'); return; }
   if (!blob) return;
-  if (playUrl) URL.revokeObjectURL(playUrl);
+  revokePreload();
+  revokePlayUrl();
   playUrl = URL.createObjectURL(blob);
+  setModalMode(false);
+  playlist = [];
+  plIndex = 0;
   $('playback').src = playUrl;
   $('mTitle').textContent = 'Slide ' + n + ' — ' + view[i].title;
   lastFocus = document.activeElement;
@@ -607,17 +709,46 @@ async function openTake() {
   $('mClose').focus();
   $('playback').play().catch(() => {});
 }
+
+async function openRun() {
+  if (haveTake.size === 0) {
+    showErr('Record at least one slide before playing the full run.');
+    return;
+  }
+  if (recording) stopRec();
+  playlist = buildPlaylist();
+  if (!playlist.length) {
+    showErr('No takes to play yet.');
+    return;
+  }
+  revokePreload();
+  revokePlayUrl();
+  setModalMode(true);
+  lastFocus = document.activeElement;
+  $('modal').classList.remove('hidden');
+  $('mClose').focus();
+  plAdvance = true;
+  await loadPlaylistItem(0);
+}
+
 function closeTake() {
+  plAdvance = false;
   $('playback').pause();
+  $('playback').removeAttribute('src');
+  $('playback').load();
   $('modal').classList.add('hidden');
+  setModalMode(false);
+  revokePreload();
+  revokePlayUrl();
+  playlist = [];
   if (lastFocus && typeof lastFocus.focus === 'function') {
     try { lastFocus.focus(); } catch (e) { /* element gone */ }
   }
   lastFocus = null;
 }
 async function download() {
-  if (!view.length) return;
-  const n = view[i].n;
+  const n = plMode && playlist[plIndex] ? playlist[plIndex].n : (view[i] && view[i].n);
+  if (n == null) return;
   let blob;
   try { blob = await getTake(n); }
   catch (e) { showErr('Could not download that take.'); return; }
@@ -668,11 +799,17 @@ $('pipX').onclick = () => {
   if (stream) $('camBtn').textContent = 'Camera hidden';
 };
 $('playBtn').onclick = openTake;
+$('playAll').onclick = openRun;
 $('dlBtn').onclick = download;
 $('delBtn').onclick = removeTake;
 $('mDl').onclick = download;
 $('mClose').onclick = closeTake;
+$('mPrev').onclick = () => { if (plMode) playRunStep(-1); };
+$('mNext').onclick = () => { if (plMode) playRunStep(1); };
 $('modal').onclick = e => { if (e.target === $('modal')) closeTake(); };
+$('playback').addEventListener('ended', () => {
+  if (plMode && plAdvance) playRunStep(1);
+});
 $('filter').onchange = () => {
   persistScriptFromDom();
   if (recording) stopRec();
@@ -755,9 +892,15 @@ $('sImg').onerror = () => {
 
 document.addEventListener('keydown', e => {
   if (e.repeat) return;
-  if (e.target.closest('input, select, textarea, video, [contenteditable]')) return;
+  if (e.target.closest('input, select, textarea, [contenteditable]')) return;
   if (e.key === 'Escape') { closeTake(); return; }
-  if (!$('modal').classList.contains('hidden')) return;
+  // Continuous run: arrow keys skip takes while the dialog is open.
+  if (!$('modal').classList.contains('hidden')) {
+    if (plMode && e.key === 'ArrowRight') { e.preventDefault(); playRunStep(1); }
+    else if (plMode && e.key === 'ArrowLeft') { e.preventDefault(); playRunStep(-1); }
+    return;
+  }
+  if (e.target.closest('video')) return;
   // Space on a focused button already activates it — don't double-fire record.
   if (e.code === 'Space') {
     if (e.target.closest('button, a, [role="button"]')) return;
@@ -807,7 +950,7 @@ window.addEventListener('beforeunload', e => {
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Tab') return;
   const focusable = Array.from($('modal').querySelectorAll('button, video, [href], [tabindex]:not([tabindex="-1"])'))
-    .filter(el => !el.disabled && el.getClientRects().length > 0);
+    .filter(el => !el.hidden && !el.disabled && el.getClientRects().length > 0);
   if (!focusable.length) return;
   const first = focusable[0], last = focusable[focusable.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }

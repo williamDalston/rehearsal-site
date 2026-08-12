@@ -199,6 +199,18 @@ main{
 .takeinfo b{font-weight:700}
 .takeinfo .under{color:var(--green)} .takeinfo .over{color:var(--gold)}
 #recCount{cursor:default}
+#playAll{
+  align-items:center;gap:6px;min-height:36px;padding:7px 12px;
+  border-color:rgba(62,201,138,.45);color:var(--green);font-weight:600;
+}
+#playAll:hover{border-color:var(--green);color:#7dffc0}
+.modal.run .box{max-width:min(860px,100%)}
+.modal .mbar .mpos{font-variant-numeric:tabular-nums;color:var(--faint);font-size:12px;white-space:nowrap}
+.modal .mnav{display:none;gap:6px}
+.modal.run .mnav{display:flex}
+.modal.run #mDl{display:none}
+.modal .msub{display:none;font-size:12px;color:var(--faint);margin-top:2px}
+.modal.run .msub{display:block}
 
 /* camera pip */
 .pip{
@@ -407,6 +419,7 @@ main{
       <button id="delBtn">Delete</button>
     </div>
     <span class="spacer"></span>
+    <button id="playAll" class="ctl" title="Play every recorded take in talk order" hidden>▶ Play all</button>
     <span id="recCount" class="pos" title="Slides recorded">0 / 43</span>
     <span class="hint"><kbd>Space</kbd> record · <kbd>←</kbd><kbd>→</kbd> move · <kbd>F</kbd> flag · <kbd>S</kbd> shuffle</span>
   </div>
@@ -424,7 +437,15 @@ main{
   <div class="box">
     <video id="playback" controls playsinline></video>
     <div class="mbar">
-      <b id="mTitle">Take</b><span class="spacer"></span>
+      <div style="min-width:0;flex:1">
+        <b id="mTitle">Take</b>
+        <div id="mSub" class="msub">Talk order · unrecorded slides are skipped</div>
+      </div>
+      <span id="mPos" class="mpos" hidden></span>
+      <div class="mnav">
+        <button id="mPrev" class="ctl" style="padding:6px 11px" title="Previous take">←</button>
+        <button id="mNext" class="ctl" style="padding:6px 11px" title="Next take">→</button>
+      </div>
       <button id="mDl" class="ctl" style="padding:6px 11px">Download</button>
       <button id="mClose" class="ctl" style="padding:6px 11px">Close</button>
     </div>
