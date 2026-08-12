@@ -713,7 +713,7 @@ $('sImg').onerror = () => {
 
 document.addEventListener('keydown', e => {
   if (e.repeat) return;
-  if (e.target.closest('input, select, textarea, video, [contenteditable="true"]')) return;
+  if (e.target.closest('input, select, textarea, video, [contenteditable]')) return;
   if (e.key === 'Escape') { closeTake(); return; }
   if (!$('modal').classList.contains('hidden')) return;
   // Space on a focused button already activates it — don't double-fire record.
@@ -762,7 +762,7 @@ window.addEventListener('beforeunload', e => {
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Tab') return;
   const focusable = Array.from($('modal').querySelectorAll('button, video, [href], [tabindex]:not([tabindex="-1"])'))
-    .filter(el => !el.disabled && el.offsetParent !== null);
+    .filter(el => !el.disabled && el.getClientRects().length > 0);
   if (!focusable.length) return;
   const first = focusable[0], last = focusable[focusable.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }

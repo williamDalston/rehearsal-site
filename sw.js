@@ -2,7 +2,7 @@
    App shell is network-first (so edits show as soon as you're online), slides and
    the icon are cache-first (fast, and available offline once viewed). Bump VERSION
    to force every client to drop the old cache. */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'rehearsal-' + VERSION;
 const SHELL = ['./', './index.html', './app.js', './data.js', './manifest.webmanifest', './icon.svg'];
 
@@ -33,13 +33,16 @@ self.addEventListener('fetch', e => {
 
   if (cacheFirst) {
     e.respondWith(
-      caches.match(req).then(hit => hit || fetch(req).then(res => {
-        if (res && res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copy));
-        }
-        return res;
-      }).catch(() => hit))
+      caches.match(req).then(hit => {
+        if (hit) return hit;
+        return fetch(req).then(res => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put(req, copy));
+          }
+          return res;
+        }).catch(() => new Response('', { status: 503, statusText: 'Offline' }));
+      })
     );
     return;
   }
