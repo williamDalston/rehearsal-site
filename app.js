@@ -707,6 +707,29 @@ $('shuffle').onclick = () => {
 $('tabSlide').onclick = () => setMobileView('slide');
 $('tabScript').onclick = () => setMobileView('script');
 
+// Narrow layout only: tap the slide to read the script; tap off the text to return.
+function mobileFlipActive() {
+  const tabs = document.querySelector('.view-tabs');
+  return !!(tabs && getComputedStyle(tabs).display !== 'none');
+}
+function flipTo(which) {
+  if (!mobileFlipActive() || mobileView === which) return;
+  persistScriptFromDom();
+  setMobileView(which);
+}
+
+document.querySelector('.slide-wrap').addEventListener('click', () => flipTo('script'));
+$('script').addEventListener('click', e => {
+  // Anywhere in the script pane that isn't editable text / a control → back to slide.
+  if (e.target.closest('.edit, button, a, select, input')) return;
+  flipTo('slide');
+});
+// Also: clicking the script chrome (header empty space / tags) flips back.
+document.querySelector('.pane-script .pane-hd').addEventListener('click', e => {
+  if (e.target.closest('button, a, select, input')) return;
+  flipTo('slide');
+});
+
 $('sImg').onerror = () => {
   showErr('Slide image failed to load. Check that slides/' + String(view[i] && view[i].n).padStart(2, '0') + '.jpg is present.');
 };
@@ -729,14 +752,14 @@ document.addEventListener('keydown', e => {
   else if (e.key === '2') setMobileView('script');
 });
 
-/* swipe between slides on the slide pane */
+/* swipe between slides on the slide pane; a short tap opens the script (mobile) */
 (function enableSwipe() {
   const el = document.querySelector('.pane-slide');
   if (!el) return;
-  let x0 = 0, y0 = 0, t0 = 0, tracking = false;
+  let x0 = 0, y0 = 0, t0 = 0, tracking = false, swiped = false;
   el.addEventListener('touchstart', e => {
     if (e.touches.length !== 1) return;
-    tracking = true;
+    tracking = true; swiped = false;
     x0 = e.touches[0].clientX;
     y0 = e.touches[0].clientY;
     t0 = Date.now();
@@ -749,9 +772,15 @@ document.addEventListener('keydown', e => {
     const dy = t.clientY - y0;
     const dt = Date.now() - t0;
     if (dt > 600) return;
-    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-    go(dx < 0 ? 1 : -1);
+    if (Math.abs(dx) >= 56 && Math.abs(dx) >= Math.abs(dy) * 1.2) {
+      swiped = true;
+      go(dx < 0 ? 1 : -1);
+    }
   }, { passive: true });
+  // Suppress the synthetic click after a horizontal swipe so we don't also flip views.
+  el.addEventListener('click', e => {
+    if (swiped) { e.preventDefault(); e.stopPropagation(); swiped = false; }
+  }, true);
 })();
 
 window.addEventListener('beforeunload', e => {

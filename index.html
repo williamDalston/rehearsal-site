@@ -272,7 +272,15 @@ main{
   }
   main[data-mobile-view="slide"] .pane-script{display:none}
   main[data-mobile-view="script"] .pane-slide{display:none}
-  .slide-wrap{padding:10px}
+  .slide-wrap{padding:10px;cursor:pointer;position:relative}
+  .slide-wrap::after{
+    content:"Tap for script";position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+    font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--dim);
+    background:rgba(13,21,32,.72);border:1px solid var(--line);border-radius:999px;
+    padding:4px 10px;pointer-events:none;
+  }
+  .pane-script .script{cursor:pointer}
+  .pane-script .script .edit{cursor:text}
   .pane-hd .tag.act{display:none}
   .hint{display:none}
   .recbar{gap:8px;padding:10px 12px calc(10px + var(--safe-b))}
@@ -370,7 +378,7 @@ main{
         <span id="sTime" class="tag">0:00</span>
         <span id="sEdited" class="tag edited" hidden>Edited</span>
         <span class="spacer"></span>
-        <span class="script-hint">click text to edit</span>
+        <span class="script-hint">edit text · tap elsewhere to flip</span>
         <button id="resetScript" class="ctl" style="padding:4px 9px;font-size:12px" title="Restore original script for this slide" hidden>Reset</button>
         <button id="flagBtn" class="ctl" style="padding:4px 9px;font-size:12px" title="Flag for review (F)">Flag</button>
       </div>
