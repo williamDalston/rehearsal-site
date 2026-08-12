@@ -4,10 +4,24 @@
 const $ = id => document.getElementById(id);
 const NAME = { W: 'WILL', C: 'CAROLINE', BOTH: 'BOTH', NONE: '—' };
 
+if (typeof DECK === 'undefined' || !Array.isArray(DECK) || !DECK.length) {
+  document.body.innerHTML = '<p style="padding:24px;font:16px system-ui">Could not load the deck (data.js). Check the network tab and refresh.</p>';
+  throw new Error('DECK missing');
+}
+
+function loadFlags() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('flags') || '[]');
+    return new Set((Array.isArray(raw) ? raw : []).map(Number).filter(n => n > 0));
+  } catch (e) {
+    return new Set();
+  }
+}
+
 let view = DECK.slice();      // current filtered/ordered list
 let i = 0;                    // index into view
 let shuffled = false;
-let flags = new Set(JSON.parse(localStorage.getItem('flags') || '[]'));
+let flags = loadFlags();
 let haveTake = new Set();     // slide numbers with a saved recording
 let mobileView = 'slide';     // 'slide' | 'script' on narrow screens
 
@@ -16,17 +30,37 @@ let db;
 function openDB() {
   return new Promise((res, rej) => {
     const r = indexedDB.open('rehearsal', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('takes');
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains('takes')) d.createObjectStore('takes');
+    };
     r.onsuccess = () => { db = r.result; res(); };
     r.onerror = () => rej(r.error);
   });
 }
-const tx = (mode, fn) => new Promise((res, rej) => {
-  const t = db.transaction('takes', mode), s = t.objectStore('takes');
-  const rq = fn(s);
-  t.oncomplete = () => res(rq && rq.result);
-  t.onerror = () => rej(t.error);
-});
+function tx(mode, fn) {
+  return new Promise((res, rej) => {
+    if (!db) return rej(new Error('IndexedDB not open'));
+    let settled = false;
+    const t = db.transaction('takes', mode);
+    const s = t.objectStore('takes');
+    let rq;
+    try { rq = fn(s); }
+    catch (e) { return rej(e); }
+    const done = (ok, val) => {
+      if (settled) return;
+      settled = true;
+      ok ? res(val) : rej(val);
+    };
+    if (rq) {
+      rq.onsuccess = () => done(true, rq.result);
+      rq.onerror = () => done(false, rq.error);
+    }
+    t.oncomplete = () => { if (!rq) done(true); };
+    t.onerror = () => done(false, t.error);
+    t.onabort = () => done(false, t.error || new Error('aborted'));
+  });
+}
 const putTake = (n, blob) => tx('readwrite', s => s.put(blob, n));
 const getTake = n => tx('readonly', s => s.get(n));
 const delTake = n => tx('readwrite', s => s.delete(n));
@@ -35,7 +69,7 @@ const allKeys = () => tx('readonly', s => s.getAllKeys());
 /* ---------------- media ---------------- */
 let stream = null, recorder = null, chunks = [], recording = false;
 let recordingFor = null;      // slide number locked when the take starts
-let t0 = 0, tick = null, audioCtx = null, raf = null;
+let t0 = 0, tick = null, audioCtx = null, raf = null, analyser = null;
 
 function showErr(msg) { $('err').textContent = msg; $('err').classList.remove('hidden'); }
 function hideErr() { $('err').classList.add('hidden'); }
@@ -46,6 +80,37 @@ function setRecLabel(kind) {
   const short = kind === 'stop' ? 'Stop' : kind === 'again' ? 'Again' : 'Record';
   $('recTxt').innerHTML = `<span class="long">${long}</span><span class="short">${short}</span>`;
   $('rec').setAttribute('aria-label', long);
+}
+
+function stopMeter() {
+  if (raf) cancelAnimationFrame(raf);
+  raf = null;
+  if (audioCtx) {
+    audioCtx.close().catch(() => {});
+    audioCtx = null;
+  }
+  analyser = null;
+  if ($('lvl')) $('lvl').style.width = '0%';
+}
+
+function watchStreamEnd() {
+  if (!stream) return;
+  stream.getTracks().forEach(track => {
+    track.onended = () => {
+      if (!stream) return;
+      const live = stream.getTracks().some(t => t.readyState === 'live');
+      if (live) return;
+      if (recording) stopRec();
+      stream = null;
+      stopMeter();
+      $('live').srcObject = null;
+      $('pip').classList.add('hidden');
+      $('camBtn').textContent = 'Camera';
+      $('camBtn').classList.remove('on');
+      $('camBtn').setAttribute('aria-pressed', 'false');
+      showErr('Camera or microphone disconnected. Press Camera to reconnect.');
+    };
+  });
 }
 
 async function camOn() {
@@ -74,19 +139,22 @@ async function camOn() {
   $('camBtn').classList.add('on');
   $('camBtn').setAttribute('aria-pressed', 'true');
   $('rec').disabled = false;
+  watchStreamEnd();
   meter();
   return true;
 }
 
 function meter() {
+  stopMeter();
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const src = audioCtx.createMediaStreamSource(stream);
-    const an = audioCtx.createAnalyser(); an.fftSize = 64;
-    src.connect(an);
-    const buf = new Uint8Array(an.frequencyBinCount);
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 64;
+    src.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
     (function loop() {
-      an.getByteFrequencyData(buf);
+      if (!analyser) return;
+      analyser.getByteFrequencyData(buf);
       const avg = buf.reduce((a, b) => a + b, 0) / buf.length;
       $('lvl').style.width = Math.min(100, (avg / 110) * 100) + '%';
       raf = requestAnimationFrame(loop);
@@ -95,36 +163,81 @@ function meter() {
 }
 
 function pickMime() {
+  if (!window.MediaRecorder) return '';
   const want = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus',
                 'video/webm', 'video/mp4'];
-  for (const m of want) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  for (const m of want) if (MediaRecorder.isTypeSupported(m)) return m;
   return '';
 }
 
 async function toggleRec() {
   if (!view.length) return;
-  if (!stream) { const ok = await camOn(); if (!ok) return; }
-  recording ? stopRec() : startRec();
+  if (recording) { stopRec(); return; }
+  if (!stream || !stream.getTracks().some(t => t.readyState === 'live')) {
+    stream = null;
+    const ok = await camOn();
+    if (!ok) return;
+  }
+  startRec();
 }
 
 function startRec() {
-  if (!view.length) return;
+  if (!view.length || !stream || recording) return;
   chunks = [];
   const mt = pickMime();
-  try { recorder = new MediaRecorder(stream, mt ? { mimeType: mt } : undefined); }
+  let rec;
+  try { rec = new MediaRecorder(stream, mt ? { mimeType: mt } : undefined); }
   catch (e) { showErr('Recording is not supported in this browser. Chrome, Edge or Firefox will work.'); return; }
 
-  recordingFor = view[i].n;
-  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-  recorder.onstop = async () => {
-    const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
-    const n = recordingFor;
+  // Capture slide number in this closure so jump/filter mid-stop cannot reassign it.
+  const slideN = view[i].n;
+  recordingFor = slideN;
+  recorder = rec;
+
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onerror = () => {
+    showErr('Recording failed. Try Chrome or Edge, or toggle the camera and record again.');
+    recording = false;
     recordingFor = null;
-    try { await putTake(n, blob); haveTake.add(n); }
-    catch (e) { showErr('Could not save the take in this browser.'); }
-    renderTake();
+    clearInterval(tick);
+    $('rec').classList.remove('live');
+    setRecLabel(haveTake.has(slideN) ? 'again' : 'record');
+    $('timer').hidden = true;
   };
-  recorder.start(500);
+  rec.onstop = async () => {
+    const mime = rec.mimeType || mt || 'video/webm';
+    const blob = new Blob(chunks, { type: mime });
+    if (recorder === rec) recorder = null;
+    if (!blob.size) {
+      showErr('That take was empty — hold record for a second, then stop.');
+      if (recordingFor === slideN) recordingFor = null;
+      renderTake();
+      return;
+    }
+    try {
+      await putTake(slideN, blob);
+      haveTake.add(slideN);
+      hideErr();
+    } catch (e) {
+      showErr('Could not save the take in this browser.');
+    }
+    if (recordingFor === slideN) recordingFor = null;
+    renderTake();
+    // refresh badge if still on this slide
+    if (view[i] && view[i].n === slideN) {
+      $('sNum').className = 'num'
+        + (haveTake.has(slideN) ? ' has-take' : '')
+        + (flags.has(slideN) ? ' flagged' : '');
+    }
+  };
+
+  try { rec.start(500); }
+  catch (e) {
+    showErr('Could not start recording. Check camera permission and try again.');
+    recordingFor = null;
+    return;
+  }
+
   recording = true;
   t0 = Date.now();
   $('rec').classList.add('live');
@@ -137,13 +250,19 @@ function startRec() {
 }
 
 function stopRec() {
-  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  if (!recording && !(recorder && recorder.state !== 'inactive')) return;
   recording = false;
   clearInterval(tick);
   $('rec').classList.remove('live');
   setRecLabel('record');
   $('timer').hidden = true;
   $('timer').textContent = '0:00';
+  if (recorder && recorder.state !== 'inactive') {
+    try {
+      if (recorder.state === 'recording') recorder.requestData();
+      recorder.stop();
+    } catch (e) { /* already stopped */ }
+  }
 }
 
 /* ---------------- rendering ---------------- */
@@ -245,7 +364,7 @@ function render() {
   renderTake();
 }
 
-const esc = t => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const esc = t => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 function fillJump() {
   $('jump').innerHTML = view.map((s, k) =>
@@ -272,7 +391,9 @@ let playUrl = null;
 async function openTake() {
   if (!view.length) return;
   const n = view[i].n;
-  const blob = await getTake(n);
+  let blob;
+  try { blob = await getTake(n); }
+  catch (e) { showErr('Could not open that take.'); return; }
   if (!blob) return;
   if (playUrl) URL.revokeObjectURL(playUrl);
   playUrl = URL.createObjectURL(blob);
@@ -288,19 +409,25 @@ function closeTake() {
 async function download() {
   if (!view.length) return;
   const n = view[i].n;
-  const blob = await getTake(n); if (!blob) return;
+  let blob;
+  try { blob = await getTake(n); }
+  catch (e) { showErr('Could not download that take.'); return; }
+  if (!blob) return;
   const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `slide-${String(n).padStart(2, '0')}-take.${ext}`;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 async function removeTake() {
   if (!view.length) return;
   const n = view[i].n;
-  await delTake(n); haveTake.delete(n); renderTake();
-  // refresh badge on slide number
+  try { await delTake(n); }
+  catch (e) { showErr('Could not delete that take.'); return; }
+  haveTake.delete(n); renderTake();
   if (view[i]) {
     $('sNum').className = 'num'
       + (haveTake.has(view[i].n) ? ' has-take' : '')
@@ -344,7 +471,8 @@ $('flagBtn').onclick = () => {
   if (!view.length) return;
   const n = view[i].n;
   flags.has(n) ? flags.delete(n) : flags.add(n);
-  localStorage.setItem('flags', JSON.stringify([...flags]));
+  try { localStorage.setItem('flags', JSON.stringify([...flags])); }
+  catch (e) { showErr('Could not save flags in this browser.'); }
   render();
 };
 $('shuffle').onclick = () => {
@@ -359,12 +487,21 @@ $('shuffle').onclick = () => {
 $('tabSlide').onclick = () => setMobileView('slide');
 $('tabScript').onclick = () => setMobileView('script');
 
+$('sImg').onerror = () => {
+  showErr('Slide image failed to load. Check that slides/' + String(view[i] && view[i].n).padStart(2, '0') + '.jpg is present.');
+};
+
 document.addEventListener('keydown', e => {
-  if (['INPUT', 'SELECT', 'TEXTAREA', 'VIDEO'].includes(e.target.tagName)) return;
+  if (e.repeat) return;
+  if (e.target.closest('input, select, textarea, video, [contenteditable="true"]')) return;
   if (e.key === 'Escape') { closeTake(); return; }
   if (!$('modal').classList.contains('hidden')) return;
-  if (e.code === 'Space') { e.preventDefault(); toggleRec(); }
-  else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+  // Space on a focused button already activates it — don't double-fire record.
+  if (e.code === 'Space') {
+    if (e.target.closest('button, a, [role="button"]')) return;
+    e.preventDefault();
+    toggleRec();
+  } else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
   else if (e.key.toLowerCase() === 'f') { e.preventDefault(); $('flagBtn').click(); }
   else if (e.key.toLowerCase() === 's') { e.preventDefault(); $('shuffle').click(); }
@@ -403,7 +540,13 @@ window.addEventListener('beforeunload', e => {
 
 (async function boot() {
   $('rec').disabled = false;
-  try { await openDB(); (await allKeys() || []).forEach(k => haveTake.add(k)); }
-  catch (e) { showErr('This browser blocked local storage, so takes will not be kept after you close the tab.'); }
-  fillJump(); render();
+  try {
+    await openDB();
+    const keys = await allKeys() || [];
+    keys.forEach(k => haveTake.add(Number(k)));
+  } catch (e) {
+    showErr('This browser blocked local storage, so takes will not be kept after you close the tab.');
+  }
+  fillJump();
+  render();
 })();
