@@ -23,6 +23,7 @@
   let line = 0;
   let block = 0;            // canonical: which speaking beat within the slide
   let lastHeard = '';
+  let lastNavAt = 0;        // debounce so one clicker press can't jump two beats
   let rev = 0;
   let lastRev = -1;
   let lastAppliedT = -1;
@@ -61,10 +62,31 @@
     const i = deckIndex(n);
     return i < DECK.length - 1 ? DECK[i + 1] : null;
   }
-  // Each item (a speaker turn, or an action/note/cut) is one clicker beat.
+  // Group a slide's raw items into presentation beats, so one click = one meaningful
+  // beat instead of one per item. A `say` (or an action/cut explicitly flagged
+  // stop:true) starts a beat; do/cut/note attach to the current beat and ride along.
+  // A `note` is never its own click — it just shows with the beat it belongs to.
+  function beatsOf(n) {
+    const beats = [];
+    let cur = null, pending = [];
+    itemsFor(n).forEach((it, idx) => {
+      const standalone = (it.t === 'do' || it.t === 'cut') && it.stop === true;
+      if (it.t === 'say' || standalone) {
+        cur = pending.concat([{ it: it, idx: idx }]);
+        beats.push(cur);
+        pending = [];
+      } else if (cur) {
+        cur.push({ it: it, idx: idx });
+      } else {
+        pending.push({ it: it, idx: idx });   // leading note/action → rides the first beat
+      }
+    });
+    if (pending.length) beats.push(pending);
+    if (!beats.length) beats.push([]);
+    return beats;
+  }
   function beatCount(n) {
-    const k = itemsFor(n).length;
-    return k > 0 ? k : 1;
+    return beatsOf(n).length;
   }
   function firstSay(s) {
     if (!s) return '';
@@ -73,20 +95,25 @@
     }
     return s.title || '';
   }
+  // Rows carry their BEAT index (not their raw item index) so a whole beat highlights
+  // and scrolls as one unit.
   function rowsFor(n) {
     const rows = [];
     let lastWho = null;
-    itemsFor(n).forEach((it, blk) => {
-      if (it.t === 'say') {
-        const showWho = it.who !== lastWho;
-        lastWho = it.who;
-        (it.lines || []).forEach((text, li) => {
-          rows.push({ kind: 'say', who: it.who, text, showWho: showWho && li === 0, block: blk });
-        });
-      } else {
-        lastWho = null;
-        rows.push({ kind: it.t, text: it.text || '', block: blk });
-      }
+    beatsOf(n).forEach((beat, bi) => {
+      beat.forEach(node => {
+        const it = node.it;
+        if (it.t === 'say') {
+          const showWho = it.who !== lastWho;
+          lastWho = it.who;
+          (it.lines || []).forEach((text, li) => {
+            rows.push({ kind: 'say', who: it.who, text, showWho: showWho && li === 0, block: bi });
+          });
+        } else {
+          lastWho = null;
+          rows.push({ kind: it.t, text: it.text || '', block: bi });
+        }
+      });
     });
     return rows;
   }
@@ -182,6 +209,9 @@
 
   // Clicker Next/Prev walk the beat list; crossing a slide edge moves the audience.
   function nav(dir) {
+    const now = Date.now();
+    if (now - lastNavAt < 300) return;   // ignore a bounced double-press
+    lastNavAt = now;
     if (dir === 'next') {
       if (block + 1 < beatCount(slideN)) { gotoBeat(slideN, block + 1, { fromNav: true }); return; }
       const nx = nextSlide(slideN);
