@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rehearsal">
+  <rect width="512" height="512" fill="#0d1520"/>
+  <path d="M256 96 424 240h-56v176h-80V320h-64v96H144V240H88z" fill="#4b9fd8"/>
+  <circle cx="372" cy="150" r="46" fill="#f2647a"/>
+</svg>

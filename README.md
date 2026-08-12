@@ -12,6 +12,9 @@ script beside each one, and one video take per slide recorded straight in the br
 index.html
 app.js
 data.js
+manifest.webmanifest
+sw.js
+icon.svg
 .nojekyll
 slides/01.jpg … 43.jpg
 ```
@@ -42,6 +45,14 @@ device. Nothing uploads anywhere. Consequences worth knowing:
 - Safari private browsing restricts IndexedDB, so takes may not persist there.
 - Use **Download** on any take you actually want to keep.
 
+**It works offline.** A service worker (`sw.js`) caches the app and — once you've viewed
+them — the slides, so the tool keeps running with no network. That is the point at a
+conference: rehearse on the plane, present in a room with dead Wi-Fi. The app shell is
+network-first, so any update you push shows up the moment you're back online; bump `VERSION`
+in `sw.js` to force every browser to drop the old cache. The worker needs HTTPS or
+`localhost`, same as the camera, so it simply stays dormant on `file://`. You can also
+"Install" the page as a standalone app from the browser's address bar (`manifest.webmanifest`).
+
 **`.nojekyll` is included** so GitHub Pages serves the files as-is rather than running them
 through Jekyll. Keep it.
 
@@ -61,6 +72,12 @@ are zero-padded lowercase — `slides/04.jpg`, not `slides/4.JPG`.
 The record button sits in the fixed bottom bar and never scrolls away. One take per slide;
 recording again replaces it. **Watch take** opens playback over the page, so you never lose
 your place in the deck.
+
+**Timing is baked in.** Each slide carries a target length (the `len` field). While you
+record, the timer turns amber the moment you run past that target. After you stop, the take
+shows its actual length against the goal — `0:47 / 0:50 · 3s under` — so you can feel where
+you rush and where you drag. The header shows the deck's total target runtime, and the
+counter by the shortcuts (`12 / 43`) tracks how many slides you've recorded.
 
 **Shuffle** is for memory work — it randomises the order so you're recalling the beat rather
 than riding the sequence. Combine it with the filters: *Capture slides* drills the five you

@@ -1,0 +1,15 @@
+{
+  "name": "The House That AI Built — rehearsal",
+  "short_name": "Rehearsal",
+  "description": "Practice deck with per-slide script and in-browser recording for the Drupal GovCon 2026 talk.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1520",
+  "theme_color": "#0d1520",
+  "icons": [
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "maskable" }
+  ]
+}

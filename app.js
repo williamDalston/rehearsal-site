@@ -590,6 +590,7 @@ function shuffle(a) { for (let k = a.length - 1; k > 0; k--) { const j = Math.ra
 
 /* ---------------- playback ---------------- */
 let playUrl = null;
+let lastFocus = null;         // restored when the playback dialog closes
 async function openTake() {
   if (!view.length) return;
   const n = view[i].n;
@@ -601,12 +602,18 @@ async function openTake() {
   playUrl = URL.createObjectURL(blob);
   $('playback').src = playUrl;
   $('mTitle').textContent = 'Slide ' + n + ' — ' + view[i].title;
+  lastFocus = document.activeElement;
   $('modal').classList.remove('hidden');
+  $('mClose').focus();
   $('playback').play().catch(() => {});
 }
 function closeTake() {
   $('playback').pause();
   $('modal').classList.add('hidden');
+  if (lastFocus && typeof lastFocus.focus === 'function') {
+    try { lastFocus.focus(); } catch (e) { /* element gone */ }
+  }
+  lastFocus = null;
 }
 async function download() {
   if (!view.length) return;
@@ -629,7 +636,9 @@ async function removeTake() {
   const n = view[i].n;
   try { await delTake(n); }
   catch (e) { showErr('Could not delete that take.'); return; }
-  haveTake.delete(n); renderTake();
+  haveTake.delete(n);
+  delete takeMeta[n]; saveTakeMeta();
+  renderTake();
   if (view[i]) {
     $('sNum').className = 'num'
       + (haveTake.has(view[i].n) ? ' has-take' : '')
@@ -749,8 +758,27 @@ window.addEventListener('beforeunload', e => {
   if (recording) { e.preventDefault(); e.returnValue = ''; }
 });
 
+/* keep Tab inside the playback dialog while it is open */
+$('modal').addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const focusable = Array.from($('modal').querySelectorAll('button, video, [href], [tabindex]:not([tabindex="-1"])'))
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
 (async function boot() {
   $('rec').disabled = false;
+
+  // Keep the "All N slides" label and the header runtime honest if the deck grows.
+  const allOpt = $('filter').querySelector('option[value="all"]');
+  if (allOpt) allOpt.textContent = 'All ' + DECK_LEN + ' slides';
+  const totalSecs = DECK.reduce((a, s) => a + parseTime(s.len), 0);
+  const brandFull = document.querySelector('.brand .full');
+  if (brandFull && totalSecs > 0) brandFull.textContent = '· rehearsal · ~' + Math.round(totalSecs / 60) + ' min';
+
   try {
     await openDB();
     const keys = await allKeys() || [];
@@ -758,6 +786,14 @@ window.addEventListener('beforeunload', e => {
   } catch (e) {
     showErr('This browser blocked local storage, so takes will not be kept after you close the tab.');
   }
+
+  // Forget durations whose recordings are no longer present.
+  let pruned = false;
+  for (const k of Object.keys(takeMeta)) {
+    if (!haveTake.has(Number(k))) { delete takeMeta[k]; pruned = true; }
+  }
+  if (pruned) saveTakeMeta();
+
   fillJump();
   render();
 })();
