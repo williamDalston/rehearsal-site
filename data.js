@@ -10,7 +10,7 @@ const DECK = [
   "items": [
    {
     "t": "note",
-    "text": "Up while people come in. Say nothing about it. Advance when you are ready to start."
+    "text": "Up while people come in. Say nothing about it. ADVANCE when you are ready to start."
    }
   ]
  },
@@ -103,7 +103,7 @@ const DECK = [
   "items": [
    {
     "t": "do",
-    "text": "Advance. Say nothing for two seconds."
+    "text": "ADVANCE. Say nothing for two seconds."
    },
    {
     "t": "say",
@@ -517,7 +517,7 @@ const DECK = [
    },
    {
     "t": "do",
-    "text": "Advance. Say nothing."
+    "text": "ADVANCE. Say nothing."
    }
   ]
  },
@@ -543,7 +543,7 @@ const DECK = [
    },
    {
     "t": "do",
-    "text": "Advance."
+    "text": "ADVANCE."
    }
   ]
  },
@@ -725,14 +725,14 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "Because a citation was never going to. Everything on this card is what should have travelled with that sentence. Entity, revision, moderation state, source office, retrieval time, chunk.",
+     "Because a citation was never going to. Everything on this card is what should have travelled with that sentence. Entity, revision, moderation state, effective date, source office, retrieval time, chunk.",
      "Five of these seven already exist in your content model. You are not inventing the metadata. You are refusing to throw it away on the way into the index.",
      "This one is for your cameras. I am not going to read it to you."
     ]
    },
    {
     "t": "do",
-    "text": "THREE SECONDS. Then advance."
+    "text": "THREE SECONDS. Then ADVANCE."
    }
   ]
  },
@@ -1091,7 +1091,7 @@ const DECK = [
    },
    {
     "t": "do",
-    "text": "Beat. Advance."
+    "text": "Beat. ADVANCE."
    }
   ]
  },
@@ -1283,7 +1283,7 @@ const DECK = [
      "For about four years the Australian government ran an automated compliance program now known as Robodebt. It took the annual income a person reported to the tax office, averaged it across the year, and compared that average to their fortnightly welfare payments. Where there was a gap, it raised a debt.",
      "The averaging is the flaw. People do not earn evenly. Seasonal work, casual work, stretches of unemployment. Real income is lumpy, and averaging it manufactures discrepancies that were never there.",
      "And the burden was inverted. The debt was asserted, and the individual had to disprove it, sometimes with payslips from years earlier that nobody keeps.",
-     "Those debts were later found unlawful. Total redress is more than two billion Australian dollars."
+     "Those debts were later found unlawful. The total bill to government is more than two billion Australian dollars."
     ]
    },
    {
@@ -1349,7 +1349,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "Everything we have said this morning applies harder when the system also generates language and takes its own actions."
+     "Everything we have said this afternoon applies harder when the system also generates language and takes its own actions."
     ]
    }
   ]
