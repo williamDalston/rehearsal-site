@@ -1,0 +1,432 @@
+/* Show-day presenter + audience. Loaded after app.js. No-ops in rehearsal mode. */
+(function () {
+  if (typeof IS_SHOW === 'undefined' || !IS_SHOW) return;
+
+  const CHANNEL = 'house-present';
+  const STORE = 'house-present';
+  const PACE_SLACK = 60;
+  const isPresent = SHOW_MODE === 'present';
+  const isAudience = SHOW_MODE === 'audience';
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  document.documentElement.classList.add(isPresent ? 'mode-present' : 'mode-audience');
+  document.body.classList.add(isPresent ? 'mode-present' : 'mode-audience');
+  document.title = isPresent
+    ? 'Presenter — The House That AI Built'
+    : 'Audience — The House That AI Built';
+
+  const PLAN_AT = [];
+  let acc = 0;
+  DECK.forEach((s, idx) => { PLAN_AT[idx] = acc; acc += parseTime(s.len); });
+
+  let slideN = DECK[0].n;
+  let line = 0;
+  let rev = 0;
+  let lastRev = -1;
+  let clockStart = null;
+  let rec = null;
+  let voiceOn = false;
+
+  let ch = null;
+  try { ch = new BroadcastChannel(CHANNEL); }
+  catch (e) { ch = null; }
+
+  function onChannelMessage(ev) {
+    const msg = ev.data || {};
+    if ((msg.type === 'hello' || msg.type === 'request-state') && isPresent) broadcastState();
+    else if (msg.type === 'nav' && isPresent) {
+      if (msg.direction === 'next' || msg.direction === 'prev') nav(msg.direction);
+    } else if (msg.type === 'state') applyState(msg);
+  }
+  if (ch) ch.onmessage = onChannelMessage;
+
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+  function deckIndex(n) {
+    const i = DECK.findIndex(s => s.n === n);
+    return i < 0 ? 0 : i;
+  }
+  function slideOf(n) { return DECK[deckIndex(n)]; }
+  function nextSlide(n) {
+    const i = deckIndex(n);
+    return i < DECK.length - 1 ? DECK[i + 1] : null;
+  }
+  function firstSay(s) {
+    if (!s) return '';
+    for (const it of itemsFor(s.n)) {
+      if (it.t === 'say' && it.lines && it.lines[0]) return it.lines[0];
+    }
+    return s.title || '';
+  }
+  function rowsFor(n) {
+    const rows = [];
+    let lastWho = null;
+    for (const it of itemsFor(n)) {
+      if (it.t === 'say') {
+        const showWho = it.who !== lastWho;
+        lastWho = it.who;
+        (it.lines || []).forEach((text, li) => {
+          rows.push({ kind: 'say', who: it.who, text, showWho: showWho && li === 0 });
+        });
+      } else {
+        lastWho = null;
+        rows.push({ kind: it.t, text: it.text || '' });
+      }
+    }
+    return rows;
+  }
+  function speakerName(who) {
+    if (who === 'BOTH') return 'WILL + CAROLINE';
+    return NAME[who] || who || '—';
+  }
+
+  function elapsedSecs() {
+    if (!clockStart) return 0;
+    return Math.max(0, Math.floor((Date.now() - clockStart) / 1000));
+  }
+  function ensureClock() {
+    if (!clockStart) clockStart = Date.now();
+  }
+
+  function persist() {
+    try {
+      sessionStorage.setItem(STORE, JSON.stringify({
+        slide: slideN, line: line, rev: rev, clockStart: clockStart
+      }));
+    } catch (e) { /* private mode */ }
+  }
+  function restore() {
+    try {
+      const s = JSON.parse(sessionStorage.getItem(STORE) || 'null');
+      if (!s || typeof s.slide !== 'number') return;
+      if (DECK.some(d => d.n === s.slide)) slideN = s.slide;
+      const rows = rowsFor(slideN);
+      line = Math.max(0, Math.min(rows.length ? rows.length - 1 : 0, s.line | 0));
+      if (typeof s.rev === 'number') {
+        rev = s.rev;
+        lastRev = s.rev;
+      }
+      if (typeof s.clockStart === 'number' && s.clockStart > 0) clockStart = s.clockStart;
+    } catch (e) { /* ignore */ }
+  }
+
+  function post(msg) {
+    if (!ch) return;
+    try { ch.postMessage(msg); } catch (e) { /* ignore */ }
+  }
+  function broadcastState() {
+    rev += 1;
+    persist();
+    post({ type: 'state', slide: slideN, line: line, rev: rev, t: Date.now() });
+  }
+
+  function applyState(msg) {
+    if (!msg || typeof msg.slide !== 'number') return;
+    if (typeof msg.rev === 'number' && msg.rev < lastRev) return;
+    if (typeof msg.rev === 'number') lastRev = msg.rev;
+    const n = DECK.some(s => s.n === msg.slide) ? msg.slide : DECK[0].n;
+    const rows = rowsFor(n);
+    const ln = Math.max(0, Math.min(rows.length ? rows.length - 1 : 0, msg.line | 0));
+    const changedSlide = n !== slideN;
+    slideN = n;
+    line = ln;
+    persist();
+    if (isAudience) renderAudience();
+    else if (changedSlide) renderPresent({ keepLine: true });
+    else highlightLine();
+  }
+
+  function gotoSlide(n, { fromNav } = {}) {
+    if (!DECK.some(s => s.n === n)) return;
+    if (fromNav && n !== slideN) ensureClock();
+    slideN = n;
+    line = 0;
+    if (isPresent) {
+      renderPresent();
+      broadcastState();
+    }
+  }
+
+  function nav(dir) {
+    const i = deckIndex(slideN);
+    const j = i + (dir === 'next' ? 1 : -1);
+    if (j < 0 || j >= DECK.length) return;
+    gotoSlide(DECK[j].n, { fromNav: true });
+  }
+
+  function isNextKey(e) {
+    return e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown';
+  }
+  function isPrevKey(e) {
+    return e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp';
+  }
+  function isIgnored(e) {
+    return e.key === '.' || e.code === 'Period' || e.key === 'b' || e.key === 'B';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.repeat) return;
+    if (e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+    if (e.code === 'Space') { e.preventDefault(); return; }
+    if (isIgnored(e)) { e.preventDefault(); return; }
+    if (isNextKey(e) || isPrevKey(e)) {
+      e.preventDefault();
+      const direction = isNextKey(e) ? 'next' : 'prev';
+      if (isPresent) nav(direction);
+      else post({ type: 'nav', direction: direction, t: Date.now() });
+    }
+  });
+
+  /* ---------- audience ---------- */
+  function renderAudience() {
+    const s = slideOf(slideN);
+    const img = $('audImg');
+    if (!img || !s) return;
+    const src = 'slides/' + String(s.n).padStart(2, '0') + '.jpg';
+    if (img.getAttribute('src') !== src) img.src = src;
+    img.alt = '';
+  }
+
+  /* ---------- presenter ---------- */
+  function highlightLine() {
+    const box = $('pvScript');
+    if (!box) return;
+    const nodes = box.querySelectorAll('.pv-row');
+    nodes.forEach((el, idx) => {
+      el.classList.toggle('on', idx === line);
+      el.classList.toggle('past', idx < line);
+    });
+    const on = box.querySelector('.pv-row.on');
+    if (on) on.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
+
+  function renderPresent(opts) {
+    const keepLine = opts && opts.keepLine;
+    const s = slideOf(slideN);
+    const nxt = nextSlide(slideN);
+    const rows = rowsFor(s.n);
+    if (!keepLine) line = 0;
+    if (line >= rows.length) line = Math.max(0, rows.length - 1);
+
+    const who = s.who || 'C';
+    const whoEl = $('pvWho');
+    whoEl.textContent = speakerName(who);
+    whoEl.className = 'pv-who ' + who;
+
+    $('pvSlide').textContent = 'SLIDE ' + s.n + ' / ' + DECK_LEN;
+    $('pvAct').textContent = s.act || '';
+
+    const hand = $('pvHand');
+    if (nxt && nxt.who && nxt.who !== who && nxt.who !== 'NONE') {
+      hand.hidden = false;
+      hand.innerHTML = 'HANDOFF → ' + esc(speakerName(nxt.who))
+        + '<span class="nextline">NEXT: “' + esc(firstSay(nxt)) + '”</span>';
+    } else {
+      hand.hidden = true;
+      hand.textContent = '';
+    }
+
+    const nextBox = $('pvNextBeat');
+    if (!nxt) nextBox.textContent = 'End of deck';
+    else nextBox.textContent = speakerName(nxt.who) + ' · “' + firstSay(nxt) + '”';
+
+    const box = $('pvScript');
+    box.innerHTML = '';
+    rows.forEach((row, idx) => {
+      const el = document.createElement('div');
+      el.className = 'pv-row ' + row.kind + (idx === line ? ' on' : idx < line ? ' past' : '');
+      el.dataset.i = String(idx);
+      if (row.kind === 'say') {
+        if (row.showWho) {
+          const tag = document.createElement('span');
+          tag.className = 'who-tag ' + row.who;
+          tag.textContent = speakerName(row.who);
+          el.appendChild(tag);
+        }
+        el.appendChild(document.createTextNode(row.text));
+      } else if (row.kind === 'do') {
+        const lab = document.createElement('span'); lab.className = 'pv-lab'; lab.textContent = 'ACTION';
+        el.appendChild(lab);
+        el.appendChild(document.createTextNode(row.text));
+      } else if (row.kind === 'cut') {
+        const lab = document.createElement('span'); lab.className = 'pv-lab'; lab.textContent = 'OPTIONAL / CUT IF NEEDED';
+        el.appendChild(lab);
+        el.appendChild(document.createTextNode(row.text));
+      } else {
+        const lab = document.createElement('span'); lab.className = 'pv-lab'; lab.textContent = 'NOTE';
+        el.appendChild(lab);
+        el.appendChild(document.createTextNode(row.text));
+      }
+      el.onclick = () => {
+        line = idx;
+        persist();
+        highlightLine();
+        broadcastState();
+      };
+      box.appendChild(el);
+    });
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'pv-row note';
+      empty.textContent = 'No script on this slide.';
+      box.appendChild(empty);
+    }
+    requestAnimationFrame(() => highlightLine());
+    tickClock();
+  }
+
+  function tickClock() {
+    const el = $('pvTime');
+    const pace = $('pvPace');
+    if (!el) return;
+    const e = elapsedSecs();
+    const plan = PLAN_AT[deckIndex(slideN)] || 0;
+    el.textContent = 'Elapsed ' + fmtTime(e) + ' · Plan ~' + fmtTime(plan) + ' · Slot ~30 min';
+    pace.className = 'pv-pace';
+    if (!clockStart) {
+      pace.textContent = 'Holding';
+      pace.classList.add('ok');
+    } else if (Math.abs(e - plan) <= PACE_SLACK) {
+      pace.textContent = 'On pace';
+      pace.classList.add('ok');
+    } else if (e < plan - PACE_SLACK) {
+      pace.textContent = 'A little fast';
+      pace.classList.add('fast');
+    } else {
+      pace.textContent = 'A little slow';
+      pace.classList.add('slow');
+    }
+  }
+
+  function resetNotes() {
+    line = 0;
+    persist();
+    if (rec) {
+      try { rec.abort(); } catch (e) { /* ignore */ }
+      rec = null;
+      if (voiceOn) startVoice();
+    }
+    const box = $('pvScript');
+    if (box) box.scrollTop = 0;
+    highlightLine();
+    requestAnimationFrame(() => highlightLine());
+  }
+
+  function openAudience() {
+    const u = new URL(location.href);
+    u.searchParams.set('mode', 'audience');
+    window.open(u.toString(), 'house-audience');
+    setTimeout(broadcastState, 250);
+    setTimeout(broadcastState, 1000);
+  }
+
+  /* ---------- optional speech follow (never changes slides) ---------- */
+  function norm(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function score(a, b) {
+    const aw = norm(a).split(' ').filter(w => w.length > 2);
+    const bw = new Set(norm(b).split(' ').filter(w => w.length > 2));
+    if (!aw.length || !bw.size) return 0;
+    let hit = 0;
+    aw.forEach(w => { if (bw.has(w)) hit++; });
+    return hit / aw.length;
+  }
+  function followTranscript(text) {
+    const rows = rowsFor(slideN);
+    const sayIdx = [];
+    rows.forEach((r, i) => { if (r.kind === 'say') sayIdx.push(i); });
+    if (!sayIdx.length) return;
+    const curPos = sayIdx.findIndex(i => i >= line);
+    const from = curPos < 0 ? sayIdx.length - 1 : curPos;
+    const candidates = sayIdx.slice(from, from + 2);
+    let best = line, bestScore = 0.45;
+    candidates.forEach(i => {
+      const sc = score(text, rows[i].text);
+      if (sc > bestScore) { bestScore = sc; best = i; }
+    });
+    if (best > line && bestScore >= 0.45) {
+      line = best;
+      persist();
+      highlightLine();
+    }
+  }
+  function speechAvailable() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+  function startVoice() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      voiceOn = false;
+      const box = $('pvVoice');
+      if (box) box.checked = false;
+      return;
+    }
+    stopVoice();
+    rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    rec.onresult = ev => {
+      let t = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) t += ev.results[i][0].transcript + ' ';
+      followTranscript(t);
+    };
+    rec.onerror = () => { /* stay on current line; slides never move */ };
+    rec.onend = () => { if (voiceOn) { try { rec.start(); } catch (e) { /* ignore */ } } };
+    try { rec.start(); }
+    catch (e) {
+      voiceOn = false;
+      $('pvVoice').checked = false;
+      $('pvVoiceLab').classList.remove('on');
+    }
+  }
+  function stopVoice() {
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    try { r.onend = null; r.abort(); } catch (e) { /* ignore */ }
+  }
+
+  if (isPresent) {
+    restore();
+    $('pvBack').onclick = () => nav('prev');
+    $('pvNext').onclick = () => nav('next');
+    $('pvReset').onclick = resetNotes;
+    $('pvResync').onclick = () => broadcastState();
+    $('pvOpenAud').onclick = openAudience;
+    if (!speechAvailable()) {
+      $('pvVoice').disabled = true;
+      $('pvVoiceLab').title = 'Speech recognition is not available in this browser';
+    }
+    $('pvVoice').onchange = e => {
+      voiceOn = !!e.target.checked;
+      $('pvVoiceLab').classList.toggle('on', voiceOn);
+      if (voiceOn) startVoice();
+      else stopVoice();
+    };
+    setInterval(tickClock, 1000);
+    renderPresent({ keepLine: true });
+    broadcastState();
+  } else {
+    let hadStore = false;
+    try { hadStore = !!sessionStorage.getItem(STORE); } catch (e) { /* ignore */ }
+    if (hadStore) {
+      restore();
+      renderAudience();
+    }
+    function requestState() {
+      const t = Date.now();
+      post({ type: 'request-state', t: t });
+      post({ type: 'hello', t: t });
+    }
+    requestState();
+    window.addEventListener('pageshow', requestState);
+    setTimeout(requestState, 50);
+    setTimeout(requestState, 250);
+    setTimeout(requestState, 1000);
+  }
+})();

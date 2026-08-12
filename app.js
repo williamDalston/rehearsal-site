@@ -10,6 +10,8 @@ if (typeof DECK === 'undefined' || !Array.isArray(DECK) || !DECK.length) {
 }
 
 const DECK_LEN = DECK.length;
+const SHOW_MODE = (new URLSearchParams(location.search).get('mode') || '').toLowerCase();
+const IS_SHOW = SHOW_MODE === 'present' || SHOW_MODE === 'audience';
 
 // "M:SS" -> seconds; anything unparseable (or "—") -> 0, meaning "no target".
 const parseTime = t => {
@@ -1233,6 +1235,7 @@ async function removeTake() {
 
 /* ---------------- wiring ---------------- */
 function go(d) {
+  if (IS_SHOW) return;
   if (!view.length) return;
   persistScriptFromDom();
   if (recording) stopRec();
@@ -1367,6 +1370,7 @@ $('sImg').onerror = () => {
 };
 
 document.addEventListener('keydown', e => {
+  if (IS_SHOW) return;
   if (e.repeat) return;
   if (e.target.closest('input, select, textarea, [contenteditable]')) return;
   if (e.key === 'Escape') { closeTake(); return; }
@@ -1521,6 +1525,7 @@ $('modal').addEventListener('keydown', e => {
 });
 
 (async function boot() {
+  if (IS_SHOW) return;
   $('rec').disabled = false;
 
   // Keep the "All N slides" label and the header runtime honest if the deck grows.

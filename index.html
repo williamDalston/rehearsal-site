@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+(function () {
+  var m = (new URLSearchParams(location.search).get('mode') || '').toLowerCase();
+  if (m === 'present' || m === 'audience') document.documentElement.classList.add('mode-' + m);
+})();
+</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0d1520">
 <meta name="description" content="Practice deck with per-slide script and in-browser recording for the Drupal GovCon 2026 talk “The House That AI Built.”">
@@ -357,6 +363,83 @@ main{
   .slide-wrap img,.rec,.ctl,.bar i{transition:none}
   .rec.live{animation:none}
 }
+
+/* ===== show-day presenter / audience ===== */
+html.mode-present,html.mode-audience{background:#0d1520}
+html.mode-audience{background:#000}
+html.mode-present body,html.mode-audience body{padding:0}
+html.mode-present .app,
+html.mode-present #pip,
+html.mode-present #modal,
+html.mode-audience .app,
+html.mode-audience #pip,
+html.mode-audience #modal{display:none!important}
+#presentApp,#audienceApp{display:none}
+html.mode-present #presentApp{display:flex!important;flex-direction:column;height:100%;min-height:0}
+html.mode-audience #audienceApp{display:flex!important;height:100%;background:#000}
+html.mode-audience,html.mode-audience body{background:#000;overflow:hidden}
+
+.aud-wrap{flex:1;display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none}
+.aud-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;pointer-events:none}
+
+.pv{display:flex;flex-direction:column;height:100%;min-height:0;background:#0d1520;color:#e8eef4;
+  font:18px/1.35 "Segoe UI",ui-sans-serif,system-ui,sans-serif}
+.pv-top{flex:none;padding:14px 18px 10px;border-bottom:1px solid #2a3a4d}
+.pv-who{
+  font-size:clamp(28px,4.2vw,52px);font-weight:800;letter-spacing:.04em;line-height:1;
+  padding:8px 14px;border-radius:10px;display:inline-block;margin-bottom:8px;
+  border:3px solid currentColor;
+}
+.pv-who.W{color:#7ec8ff;background:rgba(11,100,168,.25)}
+.pv-who.C{color:#f0b429;background:rgba(240,180,41,.14)}
+.pv-who.BOTH{color:#f2647a;background:rgba(242,100,122,.14)}
+.pv-who.NONE{color:#93a5b8;background:#1b2836;border-color:#2a3a4d}
+.pv-meta{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:baseline;color:#93a5b8;font-size:15px}
+.pv-slide{font-weight:800;color:#e8eef4;font-size:clamp(18px,2vw,26px)}
+.pv-time{font-variant-numeric:tabular-nums}
+.pv-pace{font-weight:700}
+.pv-pace.ok{color:#3ec98a}
+.pv-pace.fast{color:#4b9fd8}
+.pv-pace.slow{color:#e7c473}
+.pv-hand{
+  margin-top:10px;padding:10px 14px;border-radius:10px;font-weight:800;
+  font-size:clamp(18px,2.2vw,28px);letter-spacing:.03em;
+  background:#1b2836;border:2px solid #f0b429;color:#f0b429;
+}
+.pv-hand .nextline{display:block;font-weight:600;font-size:clamp(16px,1.6vw,22px);color:#e8eef4;margin-top:4px;letter-spacing:0}
+.pv-bar{flex:none;display:flex;flex-wrap:wrap;gap:8px;padding:10px 18px;border-bottom:1px solid #2a3a4d;background:#141e2b}
+.pv-bar .ctl{min-height:44px;padding:8px 16px;font-size:15px;font-weight:700}
+.pv-bar .go{background:#0b64a8;border-color:#4b9fd8;color:#fff}
+.pv-bar .panic{border-color:#f0b429;color:#f0b429}
+.pv-script{
+  flex:1;min-height:0;overflow-y:auto;padding:16px 22px 28px;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+}
+.pv-row{margin:0 0 14px;padding:10px 12px;border-radius:10px;cursor:pointer;border:2px solid transparent}
+.pv-row.say{font-size:clamp(22px,2.5vw,34px);line-height:1.4;font-weight:500;color:#f4f8fc}
+.pv-row.say .who-tag{display:block;font-size:16px;font-weight:800;letter-spacing:.14em;margin-bottom:6px;opacity:.95}
+.pv-row.say .who-tag.W{color:#7ec8ff}
+.pv-row.say .who-tag.C{color:#f0b429}
+.pv-row.say .who-tag.BOTH{color:#f2647a}
+.pv-row.do,.pv-row.note,.pv-row.cut{
+  font-size:clamp(16px,1.5vw,22px);line-height:1.35;font-weight:700;
+  border-left:8px solid;padding:10px 12px 10px 14px;
+}
+.pv-row.do{background:#3a1520;border-left-color:#f2647a;color:#ffd0d8;font-style:italic}
+.pv-row.note{background:#1b2836;border-left-color:#93a5b8;color:#c5d2de}
+.pv-row.cut{background:#2a2410;border-left-color:#f0b429;color:#e7c473}
+.pv-lab{display:inline-block;font-style:normal;font-size:12px;letter-spacing:.12em;font-weight:800;
+  border:1px solid currentColor;border-radius:4px;padding:1px 7px;margin-right:8px;vertical-align:middle}
+.pv-row.on{border-color:#f0b429;background:rgba(240,180,41,.12);box-shadow:inset 0 0 0 1px rgba(240,180,41,.35)}
+.pv-row.past{opacity:.55}
+.pv-next{
+  flex:none;padding:12px 22px 16px;border-top:1px solid #2a3a4d;background:#141e2b;
+  font-size:clamp(16px,1.6vw,22px);
+}
+.pv-next b{display:block;font-size:12px;letter-spacing:.12em;color:#93a5b8;margin-bottom:4px}
+.pv-voice{margin-left:auto;display:flex;align-items:center;gap:8px;color:#93a5b8;font-size:14px;font-weight:600}
+.pv-voice.on{color:#3ec98a}
+.pv-voice input{width:18px;height:18px;accent-color:#3ec98a}
 </style>
 </head>
 <body>
@@ -483,8 +566,39 @@ main{
   </div>
 </div>
 
+<div id="presentApp" class="pv">
+  <div class="pv-top">
+    <div id="pvWho" class="pv-who C">CAROLINE</div>
+    <div class="pv-meta">
+      <span id="pvSlide" class="pv-slide">SLIDE 1 / 43</span>
+      <span id="pvAct"></span>
+      <span id="pvTime" class="pv-time">Elapsed 0:00 · Slot ~30 min</span>
+      <span id="pvPace" class="pv-pace ok">On pace</span>
+    </div>
+    <div id="pvHand" class="pv-hand" hidden></div>
+  </div>
+  <div class="pv-bar">
+    <button type="button" id="pvBack" class="ctl">◀ Back</button>
+    <button type="button" id="pvNext" class="ctl go">Next ▶</button>
+    <button type="button" id="pvReset" class="ctl panic" title="Keep this slide. Restart the notes.">Reset Notes</button>
+    <button type="button" id="pvResync" class="ctl" title="Push this slide to the projector">Resync Displays</button>
+    <button type="button" id="pvOpenAud" class="ctl go">Open Audience View</button>
+    <label class="pv-voice" id="pvVoiceLab"><input type="checkbox" id="pvVoice"> Follow My Voice</label>
+  </div>
+  <div id="pvScript" class="pv-script"></div>
+  <div class="pv-next">
+    <b>NEXT SLIDE</b>
+    <div id="pvNextBeat">—</div>
+  </div>
+</div>
+
+<div id="audienceApp">
+  <div class="aud-wrap"><img id="audImg" alt="" draggable="false"></div>
+</div>
+
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script src="present.js"></script>
 <script>
 /* Offline support — safe to fail (needs https or localhost; skipped on file://). */
 if ('serviceWorker' in navigator) {
