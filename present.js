@@ -196,6 +196,11 @@
       }
       return;
     }
+    if (e.key === 'f' || e.key === 'F' || e.key === 'F8') {
+      e.preventDefault();
+      if (isAudience) toggleFullscreen();
+      return;
+    }
     if (isIgnored(e)) { e.preventDefault(); return; }
     if (isNextKey(e) || isPrevKey(e)) {
       e.preventDefault();
@@ -204,6 +209,16 @@
       else post({ type: 'nav', direction: direction, t: Date.now() });
     }
   });
+
+  function toggleFullscreen() {
+    const root = document.documentElement;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+    const req = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (req) req.call(root).catch(() => {});
+  }
 
   /* ---------- audience ---------- */
   function renderAudience() {
@@ -643,19 +658,25 @@
     setTimeout(requestState, 50);
     setTimeout(requestState, 250);
     setTimeout(requestState, 1000);
+    const fullBtn = $('audFull');
+    if (fullBtn) fullBtn.onclick = () => toggleFullscreen();
+    const wrap = document.querySelector('.aud-wrap');
+    if (wrap) wrap.addEventListener('dblclick', () => toggleFullscreen());
     window.addEventListener('beforeunload', e => {
       e.preventDefault();
       e.returnValue = '';
     });
     let hideCursor = null;
     const idle = () => {
-      document.documentElement.classList.add('aud-idle');
+      if (document.fullscreenElement) document.documentElement.classList.add('aud-idle');
     };
     document.addEventListener('mousemove', () => {
       document.documentElement.classList.remove('aud-idle');
       clearTimeout(hideCursor);
       hideCursor = setTimeout(idle, 2000);
     });
-    hideCursor = setTimeout(idle, 2000);
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) document.documentElement.classList.remove('aud-idle');
+    });
   }
 })();

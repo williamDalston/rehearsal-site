@@ -385,6 +385,12 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
 
 .aud-wrap{flex:1;display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none}
 .aud-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;pointer-events:none}
+.aud-full{
+  position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:6;
+  background:#0b64a8;color:#fff;border:0;border-radius:10px;cursor:pointer;
+  padding:12px 18px;font:700 15px/1.25 "Segoe UI",sans-serif;white-space:nowrap;
+}
+html:fullscreen .aud-full,html:-webkit-full-screen .aud-full{display:none!important}
 
 .pv{display:flex;flex-direction:column;height:100%;min-height:0;background:#0d1520;color:#e8eef4;
   font:18px/1.35 "Segoe UI",ui-sans-serif,system-ui,sans-serif}
@@ -598,14 +604,14 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
     <div id="pvHand" class="pv-hand" hidden></div>
   </div>
   <div id="pvSetup" class="pv-setup">
-    <b>Show day:</b> Open Audience View → drag that window to HDMI → F11. Exit fullscreen with <b>F11 again</b> (Esc will not exit).
-    <b>No HDMI:</b> Open Audience View anyway — two windows on this computer is enough to practice. Snap them with Win+Left / Win+Right. Do not press F11.
+    <b>Show day:</b> Open Audience View → drag that window to HDMI → click it → press <b>F</b> (or F8) for fullscreen. Exit with <b>F</b> or <b>Esc</b>. Do not use F11.
+    <b>No HDMI:</b> Open Audience View anyway — two windows on this computer is enough to practice. Snap them with Win+Left / Win+Right.
   </div>
   <div id="pvAlert" class="err pv-alert hidden" role="alert"></div>
   <div class="pv-bar">
     <button type="button" id="pvFold" class="ctl" title="Hide the header so the script is larger">Collapse</button>
     <span id="pvMini" class="pv-mini"></span>
-    <button type="button" id="pvOpenAud" class="ctl go" title="Opens a second window of slides only. Practice beside this window, or drag it to HDMI and press F11.">Open Audience View</button>
+    <button type="button" id="pvOpenAud" class="ctl go" title="Opens a second window of slides only. Drag it to HDMI, click it, then press F for fullscreen.">Open Audience View</button>
     <button type="button" id="pvBack" class="ctl" title="Previous slide (← or Page Up)">◀ Back</button>
     <button type="button" id="pvNext" class="ctl" title="Next slide (→ or Page Down)">Next ▶</button>
     <button type="button" id="pvReset" class="ctl panic" title="Keep this slide. Restart the notes.">Reset Notes</button>
@@ -622,6 +628,7 @@ html.mode-audience.aud-idle,html.mode-audience.aud-idle *{cursor:none!important}
 
 <div id="audienceApp">
   <div class="aud-wrap"><img id="audImg" alt="" draggable="false"></div>
+  <button type="button" id="audFull" class="aud-full">Fullscreen (F or F8) · Esc to exit</button>
 </div>
 
 <script src="data.js"></script>
