@@ -229,7 +229,7 @@ const DECK = [
     "who": "W",
     "lines": [
      "And that is exactly what makes the next part dangerous. Three boxes and one arrow. The traditional architecture of optimism.",
-     "It is a wonderful sketch. It is where most prototypes stop. And it governs nothing. It has no answer to where the claim came from, what the system was allowed to look at, or who authorized anything."
+     "It is a wonderful sketch. It is where most prototypes stop. And it governs nothing. It has no answer to where its answers come from, what the system was allowed to look at, or who authorized anything."
     ]
    }
   ]
@@ -323,7 +323,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "It found yesterday’s truth. And yesterday’s truth is still wrong.",
+     "It found yesterday’s truth. And yesterday’s truth is today’s wrong answer.",
      "Drupal published the right revision. The model behaved exactly as specified. Retrieval returned what the index held."
     ]
    },
@@ -560,7 +560,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "Front Door decides what came in. Library decides what evidence we may believe. Control Room routes the work. Vault holds the credentials. The gold gate — the Approval Gate — is the line between assistance and authority. Evidence Room is how we reconstruct what happened."
+     "Front Door decides what came in. Library decides what evidence we are allowed to believe. Control Room routes the work. Vault holds the credentials. The gold gate — the Approval Gate — is the line between assistance and authority. Evidence Room is how we reconstruct what happened."
     ]
    },
    {
@@ -659,7 +659,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "The Front Door classifies. And the distinction that matters most is whether this is a read or a write. What is the deadline for Form X, and change the deadline for Form X, are the same length and the same grammar. To a language model they are neighbors."
+     "The Front Door classifies. And the distinction that matters most is whether this is a read or a write. What is the deadline for Form X, and change the deadline for Form X, are the same length and nearly the same words. To a language model they are neighbors."
     ]
    },
    {
@@ -1378,7 +1378,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "Three questions.",
+     "Three questions. The ones I owed you.",
      "What can it believe."
     ]
    },
@@ -1524,7 +1524,7 @@ const DECK = [
     "t": "say",
     "who": "W",
     "lines": [
-     "This is the human accountable for the decision recorded in the log."
+     "This is the human accountable for the decision — recorded in the log, that records the gate, that governs the tool, that uses the source, attached to the evidence, found in the library."
     ]
    },
    {
@@ -1596,13 +1596,6 @@ const DECK = [
   "items": [
    {
     "t": "say",
-    "who": "C",
-    "lines": [
-     "Thank you. And thank you to the GovCon organizers and the sponsors, who do this for free, every year, and who are almost certainly still cleaning up somewhere in this building."
-    ]
-   },
-   {
-    "t": "say",
     "who": "W",
     "lines": [
      "The question we would leave you with is: what room is missing from your house?"
@@ -1612,8 +1605,15 @@ const DECK = [
     "t": "say",
     "who": "C",
     "lines": [
-     "And if the answer is evidence, authority, continuity or accountability, you already have more foundation than you think. It is in the CMS you have been maintaining this whole time.",
+     "And if the room you’re missing is evidence, authority, continuity, or accountability — you already have the foundation for it. It’s in the CMS you’ve been maintaining this whole time.",
      "We have time for questions, and we will both be around."
+    ]
+   },
+   {
+    "t": "say",
+    "who": "C",
+    "lines": [
+     "Thank you — and thank you to the GovCon organizers and the sponsors, who do this for free, every year, and who are almost certainly still cleaning up somewhere in this building."
     ]
    }
   ]
