@@ -770,6 +770,8 @@
       }
       location.href = u.toString();
     }
+    const backBtn = $('audBack');
+    if (backBtn) backBtn.onclick = leaveAudience;
     const popBtn = $('audPop');
     if (window.opener && !window.opener.closed) {
       if (popBtn) popBtn.hidden = true;
