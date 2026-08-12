@@ -459,7 +459,19 @@ html:fullscreen .aud-full,html:-webkit-full-screen .aud-full{display:none!import
 .pv-next b{display:block;font-size:12px;letter-spacing:.12em;color:#93a5b8;margin-bottom:4px}
 .pv-voice{margin-left:auto;display:flex;align-items:center;gap:8px;color:#64788d;font-size:13px;font-weight:600}
 .pv-voice.on{color:#3ec98a}
+.pv-voice.live{color:#3ec98a}
 .pv-voice input{width:18px;height:18px;accent-color:#3ec98a}
+.pv-hear{
+  display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 220px;
+  font-size:13px;color:#93a5b8;font-weight:600;
+}
+.pv-hear .meter{width:72px;height:8px;border-radius:4px;background:#22303f;overflow:hidden;flex:none}
+.pv-hear .meter i{display:block;height:100%;width:100%;transform:scaleX(0);transform-origin:left center;background:#3ec98a;transition:transform .06s linear}
+.pv-hear.hot .meter i{background:#f0b429}
+.pv-hear b{flex:none;min-width:7.5em}
+.pv-hear.hot b{color:#f0b429}
+.pv-hear em{font-style:normal;font-weight:500;color:#e8eef4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pv.pv-follow .pv-script{padding-top:28vh;padding-bottom:52vh}
 .pv-mini{display:none;font-weight:800;letter-spacing:.04em;align-self:center;color:#e8eef4}
 .pv.pv-compact .pv-top,
 .pv.pv-compact #pvSetup,
@@ -618,6 +630,11 @@ html:fullscreen .aud-full,html:-webkit-full-screen .aud-full{display:none!import
     <button type="button" id="pvResync" class="ctl" title="Emergency: push this slide to the projector">Resync Displays</button>
     <span class="pv-keys">Clicker: ← → or Page Up/Down</span>
     <label class="pv-voice" id="pvVoiceLab" title="Optional. Off for the talk. Never changes slides."><input type="checkbox" id="pvVoice"> Follow My Voice</label>
+    <span id="pvHearWrap" class="pv-hear" hidden>
+      <span class="meter" aria-hidden="true"><i id="pvHearBar"></i></span>
+      <b id="pvHearLab">Listening…</b>
+      <em id="pvHear"></em>
+    </span>
   </div>
   <div id="pvScript" class="pv-script"></div>
   <div class="pv-next">

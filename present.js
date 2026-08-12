@@ -30,7 +30,7 @@
   let wordPos = 0;
   let scriptWords = [];
   let folded = false;
-  let lastHeard = '';
+  let hearStream = null, hearCtx = null, hearAnalyser = null, hearRaf = null, hearLiveUntil = 0;
 
   let ch = null;
   try { ch = new BroadcastChannel(CHANNEL); }
@@ -254,26 +254,23 @@
     });
   }
 
-  function scrollToCurrent(force) {
+  function scrollToCurrent() {
     const box = $('pvScript');
     if (!box) return;
     const el = (scriptWords[wordPos] && scriptWords[wordPos].el) || box.querySelector('.pv-row.on');
     if (!el) {
-      if (wordPos <= 0) box.scrollTop = 0;
+      box.scrollTop = 0;
       return;
     }
     const br = box.getBoundingClientRect();
     const er = el.getBoundingClientRect();
-    const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.28);
-    const next = Math.max(0, Math.round(y));
-    if (force || Math.abs(box.scrollTop - next) > 24) {
-      box.scrollTo({ top: next, behavior: reduceMotion ? 'auto' : 'smooth' });
-    }
+    const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.32);
+    box.scrollTop = Math.max(0, Math.round(y));
   }
 
   function highlightLine() {
     paintWords();
-    scrollToCurrent(true);
+    scrollToCurrent();
   }
 
   function jumpToWord(idx) {
@@ -282,7 +279,7 @@
     line = scriptWords[wordPos].line;
     persist();
     paintWords();
-    scrollToCurrent(true);
+    scrollToCurrent();
   }
 
   function appendSayText(el, text, lineIdx) {
@@ -556,16 +553,80 @@
 
     if (lastHit < 0 || hits < 1) return;
     if (lastHit < from - 6) return;
-    if (lastHit === wordPos) {
-      scrollToCurrent(true);
-      return;
+    if (lastHit !== wordPos) {
+      wordPos = lastHit;
+      line = scriptWords[wordPos].line;
+      persist();
+      paintWords();
     }
-    wordPos = lastHit;
-    line = scriptWords[wordPos].line;
-    persist();
-    paintWords();
-    scrollToCurrent(true);
+    scrollToCurrent();
+    requestAnimationFrame(scrollToCurrent);
   }
+  function setHearCaption(text, live) {
+    const wrap = $('pvHearWrap');
+    const lab = $('pvHearLab');
+    const cap = $('pvHear');
+    if (wrap) wrap.hidden = !voiceOn;
+    if (lab) lab.textContent = !voiceOn ? 'Voice off' : live ? 'Hearing you' : 'Listening…';
+    if (wrap) wrap.classList.toggle('hot', !!live);
+    if (cap && text) cap.textContent = '“' + text.trim() + '”';
+    const vl = $('pvVoiceLab');
+    if (vl) vl.classList.toggle('live', !!live);
+  }
+
+  function stopHearMeter() {
+    if (hearRaf) cancelAnimationFrame(hearRaf);
+    hearRaf = null;
+    if (hearStream) {
+      hearStream.getTracks().forEach(t => t.stop());
+      hearStream = null;
+    }
+    if (hearCtx) {
+      hearCtx.close().catch(() => {});
+      hearCtx = null;
+    }
+    hearAnalyser = null;
+    const bar = $('pvHearBar');
+    if (bar) bar.style.transform = 'scaleX(0)';
+  }
+
+  function tickHearMeter() {
+    if (!hearAnalyser) return;
+    const data = new Uint8Array(hearAnalyser.fftSize);
+    hearAnalyser.getByteTimeDomainData(data);
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128));
+    const lvl = Math.min(1, peak / 36);
+    const bar = $('pvHearBar');
+    if (bar) bar.style.transform = 'scaleX(' + lvl + ')';
+    if (lvl > 0.1) hearLiveUntil = Date.now() + 400;
+    const live = Date.now() < hearLiveUntil;
+    const wrap = $('pvHearWrap');
+    const lab = $('pvHearLab');
+    if (wrap) wrap.classList.toggle('hot', live);
+    if (lab && voiceOn) lab.textContent = live ? 'Hearing you' : 'Listening…';
+    hearRaf = requestAnimationFrame(tickHearMeter);
+  }
+
+  function startHearMeter() {
+    stopHearMeter();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+      if (!voiceOn) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+      hearStream = stream;
+      hearCtx = new (window.AudioContext || window.webkitAudioContext)();
+      hearAnalyser = hearCtx.createAnalyser();
+      hearAnalyser.fftSize = 512;
+      hearCtx.createMediaStreamSource(stream).connect(hearAnalyser);
+      tickHearMeter();
+    }).catch(() => {
+      setHearCaption('', false);
+    });
+  }
+
   function speechAvailable() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
@@ -579,6 +640,11 @@
     }
     stopVoice();
     lastHeard = '';
+    const app = $('presentApp');
+    if (app) app.classList.add('pv-follow');
+    setHearCaption('', false);
+    startHearMeter();
+    requestAnimationFrame(scrollToCurrent);
     rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
@@ -597,6 +663,9 @@
         }
       }
       lastHeard = finals.replace(/\s+/g, ' ').trim().split(' ').slice(-40).join(' ');
+      const shown = (interim || lastHeard).trim().split(' ').slice(-12).join(' ');
+      hearLiveUntil = Date.now() + 800;
+      setHearCaption(shown, true);
       followTranscript(lastHeard + ' ' + interim);
     };
     rec.onerror = () => { /* stay on current line; slides never move */ };
@@ -606,6 +675,8 @@
       voiceOn = false;
       $('pvVoice').checked = false;
       $('pvVoiceLab').classList.remove('on');
+      stopHearMeter();
+      setHearCaption('', false);
     }
   }
   function stopVoice() {
@@ -613,6 +684,13 @@
     const r = rec;
     rec = null;
     try { r.onend = null; r.abort(); } catch (e) { /* ignore */ }
+    stopHearMeter();
+    const app = $('presentApp');
+    if (app) app.classList.remove('pv-follow');
+    const wrap = $('pvHearWrap');
+    if (wrap) wrap.hidden = true;
+    const vl = $('pvVoiceLab');
+    if (vl) vl.classList.remove('live');
   }
 
   if (isPresent) {
