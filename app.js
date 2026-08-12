@@ -9,6 +9,33 @@ if (typeof DECK === 'undefined' || !Array.isArray(DECK) || !DECK.length) {
   throw new Error('DECK missing');
 }
 
+const DECK_LEN = DECK.length;
+
+// "M:SS" -> seconds; anything unparseable (or "—") -> 0, meaning "no target".
+const parseTime = t => {
+  const m = /^(\d+):(\d{2})$/.exec(String(t == null ? '' : t).trim());
+  return m ? (+m[1] * 60 + +m[2]) : 0;
+};
+const fmtTime = s => {
+  s = Math.max(0, Math.round(s));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+};
+
+// Take durations live in localStorage (tiny) rather than IndexedDB, so boot never
+// has to read every video blob just to show timings. Kept in sync with the blobs.
+function loadTakeMeta() {
+  try {
+    const o = JSON.parse(localStorage.getItem('takeMeta') || '{}');
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveTakeMeta() {
+  try { localStorage.setItem('takeMeta', JSON.stringify(takeMeta)); }
+  catch (e) { /* private mode / quota — timings just won't persist */ }
+}
+
 function loadFlags() {
   try {
     const raw = JSON.parse(localStorage.getItem('flags') || '[]');
@@ -18,12 +45,41 @@ function loadFlags() {
   }
 }
 
+/* Script edits — local only, keyed by slide number. Original DECK stays untouched. */
+function loadScriptEdits() {
+  try {
+    const o = JSON.parse(localStorage.getItem('scriptEdits') || '{}');
+    return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveScriptEdits() {
+  try { localStorage.setItem('scriptEdits', JSON.stringify(scriptEdits)); }
+  catch (e) { showErr('Could not save script edits in this browser.'); }
+}
+const cloneItems = items => JSON.parse(JSON.stringify(items));
+const itemsKey = items => JSON.stringify(items);
+function originalItems(n) {
+  const s = DECK.find(d => d.n === n);
+  return s ? s.items : [];
+}
+function itemsFor(n) {
+  return scriptEdits[n] ? cloneItems(scriptEdits[n]) : cloneItems(originalItems(n));
+}
+function slideIsEdited(n) {
+  return !!scriptEdits[n] && itemsKey(scriptEdits[n]) !== itemsKey(originalItems(n));
+}
+
 let view = DECK.slice();      // current filtered/ordered list
 let i = 0;                    // index into view
 let shuffled = false;
 let flags = loadFlags();
+let scriptEdits = loadScriptEdits(); // { [slideN]: items[] }
 let haveTake = new Set();     // slide numbers with a saved recording
+let takeMeta = loadTakeMeta();// { [slideN]: { d: seconds } } — take durations
 let mobileView = 'slide';     // 'slide' | 'script' on narrow screens
+let scriptSaveTimer = null;
 
 /* ---------------- storage: IndexedDB (localStorage cannot hold video) --------------- */
 let db;
@@ -70,6 +126,8 @@ const allKeys = () => tx('readonly', s => s.getAllKeys());
 let stream = null, recorder = null, chunks = [], recording = false;
 let recordingFor = null;      // slide number locked when the take starts
 let t0 = 0, tick = null, audioCtx = null, raf = null, analyser = null;
+let recElapsedMs = 0;         // length of the take being stopped, measured at stop
+let recTargetSecs = 0;        // target length of the slide being recorded
 
 function showErr(msg) { $('err').textContent = msg; $('err').classList.remove('hidden'); }
 function hideErr() { $('err').classList.add('hidden'); }
@@ -192,6 +250,7 @@ function startRec() {
   // Capture slide number in this closure so jump/filter mid-stop cannot reassign it.
   const slideN = view[i].n;
   recordingFor = slideN;
+  recTargetSecs = parseTime(view[i].len);
   recorder = rec;
 
   rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
@@ -203,6 +262,7 @@ function startRec() {
     $('rec').classList.remove('live');
     setRecLabel(haveTake.has(slideN) ? 'again' : 'record');
     $('timer').hidden = true;
+    $('timer').classList.remove('over');
   };
   rec.onstop = async () => {
     const mime = rec.mimeType || mt || 'video/webm';
@@ -217,6 +277,8 @@ function startRec() {
     try {
       await putTake(slideN, blob);
       haveTake.add(slideN);
+      takeMeta[slideN] = { d: Math.round(recElapsedMs / 1000) };
+      saveTakeMeta();
       hideErr();
     } catch (e) {
       showErr('Could not save the take in this browser.');
@@ -243,19 +305,24 @@ function startRec() {
   $('rec').classList.add('live');
   setRecLabel('stop');
   $('timer').hidden = false;
+  $('timer').classList.remove('over');
+  $('timer').textContent = '0:00';
   tick = setInterval(() => {
     const s = Math.floor((Date.now() - t0) / 1000);
-    $('timer').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    $('timer').textContent = fmtTime(s);
+    $('timer').classList.toggle('over', recTargetSecs > 0 && s > recTargetSecs);
   }, 250);
 }
 
 function stopRec() {
   if (!recording && !(recorder && recorder.state !== 'inactive')) return;
+  if (recording && t0) recElapsedMs = Math.max(0, Date.now() - t0);
   recording = false;
   clearInterval(tick);
   $('rec').classList.remove('live');
   setRecLabel('record');
   $('timer').hidden = true;
+  $('timer').classList.remove('over');
   $('timer').textContent = '0:00';
   if (recorder && recorder.state !== 'inactive') {
     try {
@@ -266,10 +333,35 @@ function stopRec() {
 }
 
 /* ---------------- rendering ---------------- */
+function updateRecCount() {
+  $('recCount').textContent = haveTake.size + ' / ' + DECK_LEN;
+}
+
+// One-line readout for a saved take: actual length vs the slide's target.
+function takeInfoHTML(s) {
+  const meta = takeMeta[s.n];
+  const target = parseTime(s.len);
+  if (!meta || typeof meta.d !== 'number') {
+    return target > 0 ? 'saved · target ' + fmtTime(target) : 'saved';
+  }
+  const d = meta.d;
+  const base = '<b>' + fmtTime(d) + '</b>';
+  if (target <= 0) return base;
+  const diff = d - target;
+  const cmp = '/ ' + fmtTime(target);
+  if (diff > 5) return base + ' ' + cmp + ' <span class="over">' + fmtTime(diff) + ' over</span>';
+  if (diff < -5) return base + ' ' + cmp + ' <span class="under">' + fmtTime(-diff) + ' under</span>';
+  return base + ' ' + cmp + ' <span>on target</span>';
+}
+
 function renderTake() {
-  const n = view[i] && view[i].n;
-  $('take').hidden = !haveTake.has(n);
-  if (!recording) setRecLabel(haveTake.has(n) ? 'again' : 'record');
+  const s = view[i];
+  const n = s && s.n;
+  const has = haveTake.has(n);
+  $('take').hidden = !has;
+  if (has) $('takeInfo').innerHTML = takeInfoHTML(s);
+  if (!recording) setRecLabel(has ? 'again' : 'record');
+  updateRecCount();
 }
 
 function setMobileView(which) {
@@ -287,6 +379,92 @@ function flashSlide() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => img.classList.remove('swap'));
   });
+}
+
+function makeEditable(el) {
+  // plaintext-only when supported; otherwise true + paste stripping
+  try { el.contentEditable = 'plaintext-only'; }
+  catch (e) { el.contentEditable = 'true'; }
+  if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true';
+  el.classList.add('edit');
+  el.spellcheck = true;
+  el.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    if (document.execCommand) document.execCommand('insertText', false, text);
+    else {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      sel.deleteFromDocument();
+      sel.getRangeAt(0).insertNode(document.createTextNode(text));
+      sel.collapseToEnd();
+    }
+    scheduleScriptSave();
+  });
+  return el;
+}
+
+function updateEditUi(n) {
+  const edited = !!(n && slideIsEdited(n));
+  $('sEdited').hidden = !edited;
+  $('resetScript').hidden = !edited;
+}
+
+function itemsFromDom(box) {
+  const items = [];
+  for (const el of box.children) {
+    if (el.classList.contains('empty')) continue;
+    if (el.classList.contains('run')) {
+      const whoEl = el.querySelector('.who');
+      const who = whoEl
+        ? (['W', 'C', 'BOTH', 'NONE'].find(c => whoEl.classList.contains(c)) || 'C')
+        : 'C';
+      const lines = [...el.querySelectorAll('.lines .edit, .lines p')]
+        .map(p => (p.innerText || p.textContent || '').replace(/\u00a0/g, ' ').trimEnd())
+        .map(t => t.trim())
+        .filter(Boolean);
+      if (lines.length) items.push({ t: 'say', who, lines });
+    } else if (el.classList.contains('do') || el.classList.contains('note') || el.classList.contains('cut')) {
+      const edit = el.querySelector('.edit');
+      let text = edit
+        ? (edit.innerText || edit.textContent || '')
+        : (el.textContent || '');
+      text = text.replace(/\u00a0/g, ' ').replace(/^▸\s*/, '').trim();
+      if (!text) continue;
+      items.push({ t: el.classList.contains('do') ? 'do' : el.classList.contains('cut') ? 'cut' : 'note', text });
+    }
+  }
+  return items;
+}
+
+function persistScriptFromDom() {
+  if (!view.length) return;
+  const n = view[i].n;
+  const items = itemsFromDom($('script'));
+  if (!items.length) {
+    // Don't wipe a slide to nothing by accident — keep last good edit / original.
+    return;
+  }
+  if (itemsKey(items) === itemsKey(originalItems(n))) {
+    delete scriptEdits[n];
+  } else {
+    scriptEdits[n] = items;
+  }
+  saveScriptEdits();
+  updateEditUi(n);
+}
+
+function scheduleScriptSave() {
+  clearTimeout(scriptSaveTimer);
+  scriptSaveTimer = setTimeout(persistScriptFromDom, 200);
+}
+
+function resetScript() {
+  if (!view.length) return;
+  const n = view[i].n;
+  delete scriptEdits[n];
+  saveScriptEdits();
+  render();
 }
 
 function render() {
@@ -307,6 +485,7 @@ function render() {
     $('bar').style.width = '0%';
     $('pos').textContent = '0 / 0';
     $('take').hidden = true;
+    updateEditUi(null);
     if (!recording) setRecLabel('record');
     return;
   }
@@ -336,23 +515,46 @@ function render() {
 
   $('flagBtn').textContent = flags.has(s.n) ? '★ Flagged' : 'Flag';
   $('flagBtn').classList.toggle('on', flags.has(s.n));
+  updateEditUi(s.n);
 
-  // script — speaker named once per run
+  // script — editable; speaker named once per run
   const box = $('script'); box.innerHTML = '';
-  for (const it of s.items) {
+  for (const it of itemsFor(s.n)) {
     if (it.t === 'say') {
       const run = document.createElement('div'); run.className = 'run';
       const who = document.createElement('div');
       who.className = 'who ' + it.who; who.textContent = NAME[it.who];
       const lines = document.createElement('div'); lines.className = 'lines';
-      for (const L of it.lines) { const p = document.createElement('p'); p.textContent = L; lines.appendChild(p); }
+      for (const L of it.lines) {
+        const p = document.createElement('p');
+        p.textContent = L;
+        makeEditable(p);
+        lines.appendChild(p);
+      }
       run.append(who, lines); box.appendChild(run);
     } else {
       const d = document.createElement('div');
       d.className = it.t === 'do' ? 'do' : it.t === 'cut' ? 'cut' : 'note';
-      if (it.t === 'do') d.textContent = '▸ ' + it.text;
-      else if (it.t === 'cut') d.innerHTML = '<b>CUT IF LONG</b> — ' + esc(it.text);
-      else d.textContent = it.text;
+      if (it.t === 'do') {
+        d.appendChild(document.createTextNode('▸ '));
+        const span = document.createElement('span');
+        span.textContent = it.text;
+        makeEditable(span);
+        d.appendChild(span);
+      } else if (it.t === 'cut') {
+        const label = document.createElement('b');
+        label.textContent = 'CUT IF LONG';
+        d.append(label, document.createTextNode(' — '));
+        const span = document.createElement('span');
+        span.textContent = it.text;
+        makeEditable(span);
+        d.appendChild(span);
+      } else {
+        const span = document.createElement('span');
+        span.textContent = it.text;
+        makeEditable(span);
+        d.appendChild(span);
+      }
       box.appendChild(d);
     }
   }
@@ -438,6 +640,7 @@ async function removeTake() {
 /* ---------------- wiring ---------------- */
 function go(d) {
   if (!view.length) return;
+  persistScriptFromDom();
   if (recording) stopRec();
   i += d; render();
 }
@@ -461,12 +664,20 @@ $('delBtn').onclick = removeTake;
 $('mDl').onclick = download;
 $('mClose').onclick = closeTake;
 $('modal').onclick = e => { if (e.target === $('modal')) closeTake(); };
-$('filter').onchange = () => { if (recording) stopRec(); applyFilter(); };
+$('filter').onchange = () => {
+  persistScriptFromDom();
+  if (recording) stopRec();
+  applyFilter();
+};
 $('jump').onchange = e => {
   if (!view.length) return;
+  persistScriptFromDom();
   if (recording) stopRec();
   i = +e.target.value; render();
 };
+$('resetScript').onclick = resetScript;
+$('script').addEventListener('input', scheduleScriptSave);
+$('script').addEventListener('blur', persistScriptFromDom, true);
 $('flagBtn').onclick = () => {
   if (!view.length) return;
   const n = view[i].n;

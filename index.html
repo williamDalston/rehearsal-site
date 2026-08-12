@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0d1520">
+<meta name="description" content="Practice deck with per-slide script and in-browser recording for the Drupal GovCon 2026 talk “The House That AI Built.”">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1520'/%3E%3Cpath d='M16 6l9 8h-3v10h-5v-6h-2v6H8V14H5z' fill='%234b9fd8'/%3E%3Ccircle cx='23' cy='9' r='3' fill='%23f2647a'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
 <title>The House That AI Built — rehearsal</title>
 <style>
 :root{
@@ -136,6 +139,17 @@ main{
 .note{background:rgba(147,165,184,.09);border-left:3px solid var(--faint);color:var(--dim);font-style:italic}
 .cut{background:rgba(240,180,41,.09);border-left:3px solid var(--gold);color:#e7c473;font-style:italic}
 .cut b{font-style:normal;letter-spacing:.05em;font-size:11px}
+.script .edit{
+  outline:none;border-radius:4px;min-width:1ch;white-space:pre-wrap;word-break:break-word;
+  transition:background .15s,box-shadow .15s;
+}
+.script .edit:hover{background:rgba(255,255,255,.03)}
+.script .edit:focus{
+  background:rgba(240,180,41,.08);
+  box-shadow:inset 0 0 0 1px rgba(240,180,41,.4);
+}
+.script-hint{font-size:11px;color:var(--faint);font-weight:400;margin-right:4px}
+.tag.edited{border-color:var(--navy);color:var(--navy)}
 
 /* ---------- record bar ---------- */
 .recbar{
@@ -180,6 +194,11 @@ main{
 }
 .take button:hover{color:var(--ink);border-color:#3c5470}
 .take .saved{color:var(--green);border-color:rgba(62,201,138,.4)}
+.timer.over{color:var(--gold)}
+.takeinfo{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+.takeinfo b{font-weight:700}
+.takeinfo .under{color:var(--green)} .takeinfo .over{color:var(--gold)}
+#recCount{cursor:default}
 
 /* camera pip */
 .pip{
@@ -349,7 +368,10 @@ main{
       <div class="pane-hd">
         <span id="sWho" class="tag who-C">CAROLINE</span>
         <span id="sTime" class="tag">0:00</span>
+        <span id="sEdited" class="tag edited" hidden>Edited</span>
         <span class="spacer"></span>
+        <span class="script-hint">click text to edit</span>
+        <button id="resetScript" class="ctl" style="padding:4px 9px;font-size:12px" title="Restore original script for this slide" hidden>Reset</button>
         <button id="flagBtn" class="ctl" style="padding:4px 9px;font-size:12px" title="Flag for review (F)">Flag</button>
       </div>
       <div id="script" class="script"></div>
@@ -369,11 +391,13 @@ main{
     </button>
     <span id="timer" class="timer" hidden>0:00</span>
     <div id="take" class="take" hidden>
+      <span id="takeInfo" class="takeinfo" aria-live="polite"></span>
       <button id="playBtn" class="saved">▶ Watch</button>
       <button id="dlBtn">Download</button>
       <button id="delBtn">Delete</button>
     </div>
     <span class="spacer"></span>
+    <span id="recCount" class="pos" title="Slides recorded">0 / 43</span>
     <span class="hint"><kbd>Space</kbd> record · <kbd>←</kbd><kbd>→</kbd> move · <kbd>F</kbd> flag · <kbd>S</kbd> shuffle</span>
   </div>
 </div>
@@ -399,5 +423,13 @@ main{
 
 <script src="data.js"></script>
 <script src="app.js"></script>
+<script>
+/* Offline support — safe to fail (needs https or localhost; skipped on file://). */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
 </body>
 </html>
