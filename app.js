@@ -757,10 +757,28 @@ function shuffle(a) { for (let k = a.length - 1; k > 0; k--) { const j = Math.ra
 let playUrl = null;
 let preloadUrl = null;
 let lastFocus = null;         // restored when the playback dialog closes
-let playlist = [];            // [{ n, title, at }]
+let playlist = [];            // [{ n, title }] in talk (slide) order
 let plIndex = 0;
 let plMode = false;           // continuous run vs single-take watch
 let plAdvance = true;         // auto-advance on ended
+let playRate = 1;
+let encoding = false;
+let encodeAbort = false;
+
+function loadPlayRate() {
+  const n = parseFloat(localStorage.getItem('playRate') || '1');
+  return [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].includes(n) ? n : 1;
+}
+function savePlayRate() {
+  try { localStorage.setItem('playRate', String(playRate)); }
+  catch (e) { /* ignore */ }
+}
+function applyPlayRate() {
+  const v = $('playback');
+  if (v) v.playbackRate = playRate;
+  const sel = $('mRate');
+  if (sel && sel.value !== String(playRate)) sel.value = String(playRate);
+}
 
 function revokePlayUrl() {
   if (playUrl) { URL.revokeObjectURL(playUrl); playUrl = null; }
@@ -769,16 +787,11 @@ function revokePreload() {
   if (preloadUrl) { URL.revokeObjectURL(preloadUrl); preloadUrl = null; }
 }
 
-/** Recorded takes in the order they were captured (fallback: talk order for older takes). */
+/** Recorded takes in talk order (slide 1 → 43). Unrecorded slides are skipped. */
 function buildPlaylist() {
   return DECK
     .filter(s => haveTake.has(s.n))
-    .map(s => ({
-      n: s.n,
-      title: s.title,
-      at: (takeMeta[s.n] && typeof takeMeta[s.n].at === 'number') ? takeMeta[s.n].at : s.n
-    }))
-    .sort((a, b) => a.at - b.at || a.n - b.n);
+    .map(s => ({ n: s.n, title: s.title }));
 }
 
 function setModalMode(run) {
@@ -786,8 +799,12 @@ function setModalMode(run) {
   $('modal').classList.toggle('run', run);
   $('mPos').hidden = !run;
   $('mSub').textContent = run
-    ? 'Recording order · plays straight through'
+    ? 'Slide order · unrecorded slides are skipped'
     : '';
+  $('mDl').textContent = run ? 'Download run' : 'Download';
+  $('mDl').title = run
+    ? 'Save the full run as one video (plays through in real time)'
+    : 'Download this take';
 }
 
 async function preloadPlaylistItem(idx) {
@@ -807,13 +824,11 @@ async function loadPlaylistItem(idx, { autoplay = true } = {}) {
   try { blob = await getTake(item.n); }
   catch (e) { showErr('Could not open take for slide ' + item.n + '.'); return; }
   if (!blob) {
-    // Skip missing blob and keep going in a run.
     if (plMode && plAdvance) return playRunStep(1);
     return;
   }
 
   const v = $('playback');
-  // Prefer a preloaded URL for the seamless handoff.
   let url = null;
   if (preloadUrl) {
     url = preloadUrl;
@@ -822,11 +837,11 @@ async function loadPlaylistItem(idx, { autoplay = true } = {}) {
     revokePlayUrl();
     url = URL.createObjectURL(blob);
   }
-  // If we created a fresh URL, drop any old playUrl first.
   if (playUrl && playUrl !== url) revokePlayUrl();
   playUrl = url;
 
   v.src = playUrl;
+  applyPlayRate();
   $('mTitle').textContent = 'Slide ' + item.n + ' — ' + item.title;
   $('mPos').textContent = (idx + 1) + ' / ' + playlist.length;
   const mImg = $('mSlide');
@@ -840,6 +855,7 @@ async function loadPlaylistItem(idx, { autoplay = true } = {}) {
   if (autoplay) {
     try { await v.play(); }
     catch (e) { /* user gesture / autoplay policy — controls still work */ }
+    applyPlayRate();
   }
   preloadPlaylistItem(idx + 1);
 }
@@ -847,7 +863,7 @@ async function loadPlaylistItem(idx, { autoplay = true } = {}) {
 async function playRunStep(delta) {
   const next = plIndex + delta;
   if (next < 0 || next >= playlist.length) {
-    if (delta > 0) closeTake(); // finished the run
+    if (delta > 0) closeTake();
     return;
   }
   await loadPlaylistItem(next);
@@ -870,11 +886,12 @@ async function openTake() {
   const mImg = $('mSlide');
   if (mImg) { mImg.removeAttribute('src'); mImg.alt = ''; }
   $('playback').src = playUrl;
+  applyPlayRate();
   $('mTitle').textContent = 'Slide ' + n + ' — ' + view[i].title;
   lastFocus = document.activeElement;
   $('modal').classList.remove('hidden');
   $('mClose').focus();
-  $('playback').play().catch(() => {});
+  $('playback').play().then(applyPlayRate).catch(() => {});
 }
 
 async function openRun() {
@@ -899,6 +916,7 @@ async function openRun() {
 }
 
 function closeTake() {
+  encodeAbort = true;
   plAdvance = false;
   $('playback').pause();
   $('playback').removeAttribute('src');
@@ -910,12 +928,27 @@ function closeTake() {
   revokePreload();
   revokePlayUrl();
   playlist = [];
+  if (!encoding) {
+    $('mDl').disabled = false;
+    $('mDl').textContent = 'Download';
+  }
   if (lastFocus && typeof lastFocus.focus === 'function') {
     try { lastFocus.focus(); } catch (e) { /* element gone */ }
   }
   lastFocus = null;
 }
-async function download() {
+
+function triggerDownload(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+async function downloadCurrentTake() {
   const n = plMode && playlist[plIndex] ? playlist[plIndex].n : (view[i] && view[i].n);
   if (n == null) return;
   let blob;
@@ -923,13 +956,190 @@ async function download() {
   catch (e) { showErr('Could not download that take.'); return; }
   if (!blob) return;
   const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `slide-${String(n).padStart(2, '0')}-take.${ext}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  triggerDownload(blob, `slide-${String(n).padStart(2, '0')}-take.${ext}`);
+}
+
+/* CRC-32 for ZIP (STORE). */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xffffffff;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+async function zipStore(files) {
+  const enc = new TextEncoder();
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const data = f.data;
+    const crc = crc32(data);
+    const local = new Uint8Array(30 + name.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(26, name.length, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, data.length, true);
+    local.set(name, 30);
+    const central = new Uint8Array(46 + name.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint32(42, offset, true);
+    central.set(name, 46);
+    locals.push(local, data);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+  const cdStart = offset;
+  let cdSize = 0;
+  for (const c of centrals) cdSize += c.length;
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, cdSize, true);
+  ev.setUint32(16, cdStart, true);
+  return new Blob([...locals, ...centrals, end], { type: 'application/zip' });
+}
+
+async function downloadRunZip(items) {
+  const files = [];
+  for (let i = 0; i < items.length; i++) {
+    if (encodeAbort) return;
+    $('mDl').textContent = 'Packing ' + (i + 1) + '/' + items.length;
+    const blob = await getTake(items[i].n);
+    if (!blob) continue;
+    const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
+    const data = new Uint8Array(await blob.arrayBuffer());
+    files.push({
+      name: String(i + 1).padStart(2, '0') + '-slide-' + String(items[i].n).padStart(2, '0') + '.' + ext,
+      data
+    });
+  }
+  if (!files.length) throw new Error('empty');
+  const zip = await zipStore(files);
+  triggerDownload(zip, 'house-that-ai-built-run.zip');
+}
+
+function waitEvent(el, name) {
+  return new Promise((res, rej) => {
+    const ok = () => { cleanup(); res(); };
+    const err = () => { cleanup(); rej(new Error(name + ' failed')); };
+    const cleanup = () => {
+      el.removeEventListener(name, ok);
+      el.removeEventListener('error', err);
+    };
+    el.addEventListener(name, ok, { once: true });
+    el.addEventListener('error', err, { once: true });
+  });
+}
+
+async function stitchRun(items) {
+  const src = document.createElement('video');
+  src.playsInline = true;
+  src.muted = false;
+  src.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none;';
+  document.body.appendChild(src);
+
+  if (typeof src.captureStream !== 'function' && typeof src.mozCaptureStream !== 'function') {
+    src.remove();
+    throw new Error('no-capture');
+  }
+
+  const sizeToNative = () => {
+    if (src.videoWidth) {
+      src.style.width = src.videoWidth + 'px';
+      src.style.height = src.videoHeight + 'px';
+    }
+  };
+
+  const first = await getTake(items[0].n);
+  if (!first) { src.remove(); throw new Error('empty'); }
+  src.src = URL.createObjectURL(first);
+  await waitEvent(src, 'loadedmetadata');
+  sizeToNative();
+
+  const cap = src.captureStream ? src.captureStream() : src.mozCaptureStream();
+  const mt = pickMime();
+  let rec;
+  try { rec = new MediaRecorder(cap, mt ? { mimeType: mt } : undefined); }
+  catch (e) { src.remove(); throw e; }
+
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.start(400);
+
+  for (let i = 0; i < items.length; i++) {
+    if (encodeAbort) break;
+    $('mDl').textContent = 'Saving ' + (i + 1) + '/' + items.length;
+    if (i > 0) {
+      const blob = await getTake(items[i].n);
+      if (!blob) continue;
+      const prev = src.src;
+      src.src = URL.createObjectURL(blob);
+      URL.revokeObjectURL(prev);
+      await waitEvent(src, 'loadedmetadata');
+      sizeToNative();
+    }
+    src.playbackRate = 1;
+    try { await src.play(); }
+    catch (e) { src.remove(); rec.stop(); throw e; }
+    await waitEvent(src, 'ended');
+  }
+
+  const out = await new Promise((res, rej) => {
+    rec.onstop = () => res(new Blob(chunks, { type: rec.mimeType || mt || 'video/webm' }));
+    rec.onerror = () => rej(new Error('recorder'));
+    try { rec.stop(); } catch (e) { rej(e); }
+  });
+  URL.revokeObjectURL(src.src);
+  src.remove();
+  if (encodeAbort || !out.size) throw new Error('aborted');
+  return out;
+}
+
+async function download() {
+  if (encoding) return;
+  if (plMode && playlist.length) {
+    encoding = true;
+    encodeAbort = false;
+    $('mDl').disabled = true;
+    const items = playlist.slice();
+    try {
+      const blob = await stitchRun(items);
+      const ext = (blob.type || '').includes('mp4') ? 'mp4' : 'webm';
+      triggerDownload(blob, 'house-that-ai-built-run.' + ext);
+    } catch (e) {
+      if (!encodeAbort) {
+        try { await downloadRunZip(items); }
+        catch (e2) { showErr('Could not download the run in this browser.'); }
+      }
+    }
+    encoding = false;
+    $('mDl').disabled = false;
+    $('mDl').textContent = plMode ? 'Download run' : 'Download';
+    return;
+  }
+  await downloadCurrentTake();
 }
 async function removeTake() {
   if (!view.length) return;
@@ -976,6 +1186,23 @@ $('mDl').onclick = download;
 $('mClose').onclick = closeTake;
 $('mPrev').onclick = () => { if (plMode) playRunStep(-1); };
 $('mNext').onclick = () => { if (plMode) playRunStep(1); };
+$('mRate').onchange = e => {
+  playRate = parseFloat(e.target.value) || 1;
+  savePlayRate();
+  applyPlayRate();
+};
+$('playback').addEventListener('loadedmetadata', applyPlayRate);
+$('playback').addEventListener('ratechange', () => {
+  const r = $('playback').playbackRate;
+  if (r && r !== playRate) {
+    // Snap to nearest offered speed if the native menu was used.
+    const opts = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+    playRate = opts.reduce((best, n) => Math.abs(n - r) < Math.abs(best - r) ? n : best, 1);
+    savePlayRate();
+    const sel = $('mRate');
+    if (sel) sel.value = String(playRate);
+  }
+});
 $('modal').onclick = e => { if (e.target === $('modal')) closeTake(); };
 $('playback').addEventListener('ended', () => {
   if (plMode && plAdvance) playRunStep(1);
@@ -1210,7 +1437,7 @@ window.addEventListener('beforeunload', e => {
 /* keep Tab inside the playback dialog while it is open */
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Tab') return;
-  const focusable = Array.from($('modal').querySelectorAll('button, video, [href], [tabindex]:not([tabindex="-1"])'))
+  const focusable = Array.from($('modal').querySelectorAll('button, video, select, [href], [tabindex]:not([tabindex="-1"])'))
     .filter(el => !el.hidden && !el.disabled && el.getClientRects().length > 0);
   if (!focusable.length) return;
   const first = focusable[0], last = focusable[focusable.length - 1];
@@ -1242,6 +1469,9 @@ $('modal').addEventListener('keydown', e => {
     if (!haveTake.has(Number(k))) { delete takeMeta[k]; pruned = true; }
   }
   if (pruned) saveTakeMeta();
+
+  playRate = loadPlayRate();
+  applyPlayRate();
 
   fillJump();
   render();

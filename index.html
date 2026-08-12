@@ -208,9 +208,9 @@ main{
 .modal .mbar .mpos{font-variant-numeric:tabular-nums;color:var(--faint);font-size:12px;white-space:nowrap}
 .modal .mnav{display:none;gap:6px}
 .modal.run .mnav{display:flex}
-.modal.run #mDl{display:none}
 .modal .msub{display:none;font-size:12px;color:var(--faint);margin-top:2px}
 .modal.run .msub{display:block}
+#mRate{min-width:72px;max-width:88px;padding-right:22px}
 
 /* camera pip — draggable */
 .pip{
@@ -438,7 +438,7 @@ main{
       <button id="delBtn">Delete</button>
     </div>
     <span class="spacer"></span>
-    <button id="playAll" class="ctl" title="Play every recorded take in recording order" hidden>▶ Play all</button>
+    <button id="playAll" class="ctl" title="Play every recorded take in slide order" hidden>▶ Play all</button>
     <span id="recCount" class="pos" title="Slides recorded">0 / 43</span>
     <span class="hint"><kbd>Space</kbd> record · <kbd>←</kbd><kbd>→</kbd> move · <kbd>F</kbd> flag · <kbd>S</kbd> shuffle</span>
   </div>
@@ -464,6 +464,15 @@ main{
         <div id="mSub" class="msub">Talk order · unrecorded slides are skipped</div>
       </div>
       <span id="mPos" class="mpos" hidden></span>
+      <select id="mRate" class="ctl" title="Playback speed" aria-label="Playback speed">
+        <option value="0.5">0.5×</option>
+        <option value="0.75">0.75×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+        <option value="1.75">1.75×</option>
+        <option value="2">2×</option>
+      </select>
       <div class="mnav">
         <button id="mPrev" class="ctl" style="padding:6px 11px" title="Previous take">←</button>
         <button id="mNext" class="ctl" style="padding:6px 11px" title="Next take">→</button>
