@@ -350,7 +350,7 @@
     }
     const br = box.getBoundingClientRect();
     const er = el.getBoundingClientRect();
-    const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.20);
+    const y = box.scrollTop + (er.top - br.top) - Math.floor(box.clientHeight * 0.10);
     const top = Math.max(0, Math.round(y));
     if (box.scrollTo) box.scrollTo({ top: top, behavior: reduceMotion ? 'auto' : 'smooth' });
     else box.scrollTop = top;
