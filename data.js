@@ -1182,7 +1182,7 @@ const DECK = [
    },
    {
     "t": "do",
-    "text": "WAIT. Front Door and Approval Gate are both right. The Vault is the one people miss, because posting needs a credential. If the room is quiet, give it four seconds, answer it yourself, and move on without comment."
+    "text": "WAIT for the room to answer. The full answer is three rooms — Front Door: classify the request. Approval Gate: posting to the public is a write, not assistance — it crosses from capability to authority. Vault: posting needs a credential; this is the one people miss. If the room is quiet, give it four seconds, say the three rooms yourself, and move on without comment."
    },
    {
     "t": "say",
